@@ -1,7 +1,7 @@
 /*************************************************************************
     > File Name: main.cpp
 ************************************************************************/
-const bool debug = true;
+const bool debug = false;
 #include <cstdio>
 #include <iostream>
 #include <cmath>
@@ -37,9 +37,10 @@ void buginfo(const char* f, ...) {if(!debug)return;va_list al; va_start(al, f);v
 #include "disassembler.h"
 
 int main(int argc, char** argv) {
-    // Setup input && output files.
     Bin2buf bin2buf;
     Disassembler disa;
+
+    // Setup input && output files.
     char* inf = (char*) malloc(100);
     char* otf = (char*) malloc(100);
     bool idone = false, odone = false;
@@ -62,6 +63,7 @@ int main(int argc, char** argv) {
         }
     }
     
+    // do the job
     Inst ist;     
     int pc_cnt = 600;
     char* s = (char*)malloc(200);

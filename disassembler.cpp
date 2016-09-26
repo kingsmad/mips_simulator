@@ -161,20 +161,20 @@ int Disassembler::dis_beq(Inst& ist, char* s) {
 // 000101
 int Disassembler::dis_bne(Inst& ist, char* s) {
     return sprintf(s, "BNE R%d, R%d, %d", ist.rs(), \
-        ist.rt(), ist.getiv());
+        ist.rt(), ist.getiv()<<2);
 }
 
 
 // 000001
 int Disassembler::dis_bgez(Inst& ist, char* s) {
     return sprintf(s, "BGEZ R%d, %d", ist.rs(), \
-            ist.getv(0, 15));
+            ist.getiv()<<2);
 }
 
 // 000111
 int Disassembler::dis_bgtz(Inst& ist, char* s) {
     return sprintf(s, "BGTZ R%d, %d", ist.rs(), \
-            ist.getiv());
+            ist.getiv()<<2);
 }
 
 // 000110
@@ -186,7 +186,7 @@ int Disassembler::dis_blez(Inst& ist, char* s) {
 // 000001
 int Disassembler::dis_bltz(Inst& ist, char* s) {
     return sprintf(s, "BLTZ R%d, %d", ist.rs(), \
-            ist.getiv());
+            ist.getiv()<<2);
 }
 
 // 001000

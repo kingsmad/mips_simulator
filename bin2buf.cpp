@@ -11,7 +11,7 @@
 #include <unistd.h>
 
 using namespace std;
-const int buf_sz = 1e5 + 10;
+const int buf_sz = 1e7 + 10;
 
 int Inst::getv(int st, int ed) {
     uint32_t msk = 0;
@@ -115,6 +115,7 @@ int Bin2buf::__zflush() {
     return 0;
 }
 
+// assuming the test-file will not be very large.
 int Bin2buf::open_in_file (const char* sf) {
     if (fd) close(fd);
     fd = open(sf, O_RDONLY, 0644);
@@ -157,12 +158,14 @@ int Bin2buf::get_inst(Inst& dst) {
 
     uint32_t t; 
     memcpy(&t, fbuf+cpos, 4);
+    // reverse endian, think about it.
     dst.setd(htonl(t));
     cpos += 4;
 
     return 0;
 }
 
+// write string to buffer
 int Bin2buf::write_buf(const char* s, int sz) {
     if (ocpos + sz >= buf_sz) {
         if (__zflush() == -1) 

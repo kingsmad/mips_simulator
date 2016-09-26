@@ -5,7 +5,7 @@ CFLAGS = -Wall -c $(DEBUG) -std=c++11
 LFLAGS = -Wall $(DEBUG)
 
 sim : $(OBJS)
-	    $(CC) $(LFLAGS) $(OBJS) -o sim 
+	$(CC) $(LFLAGS) $(OBJS) -o sim 
 
 disassembler.o : disassembler.h disassembler.cpp bin2buf.h bin2buf.cpp
 	$(CC) $(CFLAGS) disassembler.cpp
