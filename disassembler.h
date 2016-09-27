@@ -2,29 +2,31 @@
     > File Name: disassembler.h
 ************************************************************************/
 using namespace std;
-
 class Inst;
+const int _ref_map_sz = 128;
+
 class Disassembler {
     typedef int (Disassembler::*DisF)(Inst&,char*);
     static bool _map_inited;
-    static DisF _dis_map[128];
-    static DisF _dis_submap_zero[128];
-    static DisF _dis_submap_one[128];
-    bool _on_data_seg;
+    static DisF _dis_map[_ref_map_sz];
+    static DisF _dis_submap_zero[_ref_map_sz];
+    static DisF _dis_submap_one[_ref_map_sz];
+    bool _on_data_seg; // indicate if it is on data segments.
 private:
-    int __str2six(const char*);
+    int __str2six(const char*); // six bits-string to int
     void __init_dis_map();
     void __init_dis_submaps();
     int __dis_sub1_zero(Inst&, char*);
     int __dis_sub1_one(Inst&, char*);
 public:
     Disassembler();
-    int trans2z(Inst&, char*);
-    int trans2t(Inst&, char*);
-    int proc(Inst& ist, char* s, int&);
-    int proc_data(Inst&, char*, int&);
-    int proc_inst(Inst&, char*, int&);
-    int dis_special(Inst&, char*);
+    int trans2z(Inst&, char*); // int to string as '655556' form.
+    int trans2t(Inst&, char*); // int to text as 'ADDI R1, R8, #12'
+    int proc(Inst&, char*, int&); // process Inst, save string
+    int proc_data(Inst&, char*, int&); // when it is data
+    int proc_inst(Inst&, char*, int&); // when it is instruction
+    int dis_unknown(Inst&, char*);
+    int dis_special(Inst&, char*); 
     int dis_sw(Inst&, char*);
     int dis_lw(Inst&, char*);
     int dis_j(Inst&, char*);

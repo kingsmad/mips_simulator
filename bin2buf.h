@@ -10,9 +10,9 @@ class Inst {
     uint32_t _d;
 public:
     inline uint32_t d() { return _d;}
-    int getv(int st, int ed);
-    int getiv();
-    void setd(int v);
+    int getv(int st, int ed); // get unsigned-int from st-ed;
+    int getiv(); // return 0-15 bits as signed int.
+    void setd(int v); // set _d;
     void setv(uint32_t);
     inline int op() { return getv(26,31);}
     void setop(uint32_t);
@@ -26,18 +26,18 @@ public:
     void setsa(uint32_t);
     inline int fc() { return getv(0,5);}
     void setfc(uint32_t);
-    int trans2z(char*);
-public:
+    int trans2z(char*); // deprecated
 };
 
+// read && write binary-file from/to buffer.
 class Bin2buf {
 private:
-    int fd, fsize, cpos;
-    int ofd, ocpos;
+    int fd, fsize, cpos; // input
+    int ofd, ocpos; // output
     char* fbuf, *ofbuf;
 private:
     int __file_size(int);
-    int __zflush();
+    int __zflush(); // flush output buffer.
 public:
     Bin2buf();
     int open_in_file(const char* sf);

@@ -1,14 +1,15 @@
 #include <iostream>
 #include "bin2buf.h"
 #include <string.h>
+#include <arpa/inet.h>
 #include "disassembler.h"
 using namespace std;
 
 typedef int (Disassembler::*DisF)(Inst&, char*);
 bool Disassembler::_map_inited = false;
-DisF Disassembler::_dis_map[128];
-DisF Disassembler::_dis_submap_zero[128];
-DisF Disassembler::_dis_submap_one[128];
+DisF Disassembler::_dis_map[_ref_map_sz];
+DisF Disassembler::_dis_submap_zero[_ref_map_sz];
+DisF Disassembler::_dis_submap_one[_ref_map_sz];
 
 Disassembler::Disassembler() {
     // single thread, don't worry.
@@ -67,7 +68,7 @@ int Disassembler::proc_data(Inst& ist, char* s, int& pc) {
             s[31-i] = '0';
     }
 
-    int t = sprintf(s+32, " %d 0\n", pc);
+    int t = sprintf(s+32, " %d %d\n", pc, ist.d());
     pc += 4;
     return t+32; 
 }
@@ -75,6 +76,7 @@ int Disassembler::proc_data(Inst& ist, char* s, int& pc) {
 // init op map
 void Disassembler::__init_dis_map() {
     DisF* m = &_dis_map[0];
+    fill(m, m+_ref_map_sz, &Disassembler::dis_unknown);
     m[0] = &Disassembler::__dis_sub1_zero;
     m[1] = &Disassembler::__dis_sub1_one;
     m[43] = &Disassembler::dis_sw;
@@ -93,6 +95,7 @@ void Disassembler::__init_dis_map() {
 // init sub maps, currently we have only zero submap;
 void Disassembler::__init_dis_submaps() {
     DisF* m = &_dis_submap_zero[0];
+    fill(m, m+_ref_map_sz, &Disassembler::dis_unknown);
     m[13] = &Disassembler::dis_break;
     m[42] = &Disassembler::dis_slt;
     m[43] = &Disassembler::dis_sltu;
@@ -118,6 +121,9 @@ int Disassembler::__str2six(const char* s) {
     return d;
 }
 
+int Disassembler::dis_unknown(Inst& ist, char* s) {
+    return sprintf(s, "Unknown Instruction\n"); 
+}
 
 int Disassembler::__dis_sub1_zero(Inst& ist, char* s) {
     DisF f = _dis_submap_zero[ist.fc()];
@@ -160,32 +166,32 @@ int Disassembler::dis_beq(Inst& ist, char* s) {
 
 // 000101
 int Disassembler::dis_bne(Inst& ist, char* s) {
-    return sprintf(s, "BNE R%d, R%d, %d", ist.rs(), \
+    return sprintf(s, "BNE R%d, R%d, #%d", ist.rs(), \
         ist.rt(), ist.getiv()<<2);
 }
 
 
 // 000001
 int Disassembler::dis_bgez(Inst& ist, char* s) {
-    return sprintf(s, "BGEZ R%d, %d", ist.rs(), \
+    return sprintf(s, "BGEZ R%d, #%d", ist.rs(), \
             ist.getiv()<<2);
 }
 
 // 000111
 int Disassembler::dis_bgtz(Inst& ist, char* s) {
-    return sprintf(s, "BGTZ R%d, %d", ist.rs(), \
+    return sprintf(s, "BGTZ R%d, #%d", ist.rs(), \
             ist.getiv()<<2);
 }
 
 // 000110
 int Disassembler::dis_blez(Inst& ist, char* s) {
-    return sprintf(s, "BLEZ R%d, %d", ist.rs(), \
-            ist.getiv());
+    return sprintf(s, "BLEZ R%d, #%d", ist.rs(), \
+            ist.getiv()<<2);
 }
 
 // 000001
 int Disassembler::dis_bltz(Inst& ist, char* s) {
-    return sprintf(s, "BLTZ R%d, %d", ist.rs(), \
+    return sprintf(s, "BLTZ R%d, #%d", ist.rs(), \
             ist.getiv()<<2);
 }
 
@@ -255,7 +261,7 @@ int Disassembler::dis_sub(Inst& ist, char* s) {
 
 // 000000 - last6: 100011
 int Disassembler::dis_subu(Inst& ist, char* s) {
-    return sprintf(s, "SUBU, R%d, R%d, R%d", ist.rd(), \
+    return sprintf(s, "SUBU R%d, R%d, R%d", ist.rd(), \
             ist.rs(), ist.rt());
 }
 

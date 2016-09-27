@@ -4,8 +4,8 @@ DEBUG = -g
 CFLAGS = -Wall -c $(DEBUG) -std=c++11
 LFLAGS = -Wall $(DEBUG)
 
-sim : $(OBJS)
-	$(CC) $(LFLAGS) $(OBJS) -o sim 
+MIPSsim : $(OBJS)
+	$(CC) $(LFLAGS) $(OBJS) -o MIPSsim 
 
 disassembler.o : disassembler.h disassembler.cpp bin2buf.h bin2buf.cpp
 	$(CC) $(CFLAGS) disassembler.cpp
@@ -17,7 +17,7 @@ main.o: disassembler.o bin2buf.o main.cpp
 	$(CC) $(CFLAGS) main.cpp
 
 clean:
-	    \rm *.o sim
+	    \rm *.o MIPSsim
 
 tar:
-	    tar cfv sim.tar *.h *.cpp *.o sim
+	    tar cfv MIPSsim.tar *.h *.cpp *.o MIPSsim

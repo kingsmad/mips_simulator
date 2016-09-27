@@ -11,8 +11,9 @@
 #include <unistd.h>
 
 using namespace std;
-const int buf_sz = 1e7 + 10;
+const int out_buf_sz = 1e5 + 10; // maximum buffer size for input;
 
+// get unsigned-int from st-ed bits;
 int Inst::getv(int st, int ed) {
     uint32_t msk = 0;
     for(int i=st; i<=ed; ++i) {
@@ -21,6 +22,7 @@ int Inst::getv(int st, int ed) {
     return (_d & msk) >> st;
 }
 
+// signed int from 0-15 bits;
 int Inst::getiv() {
     int q = getv(0, 15);
     if ((1<<15) & q) {
@@ -29,6 +31,7 @@ int Inst::getiv() {
     return q;
 }
 
+// haven't tested these setters, maybe buggy.
 void Inst::setop(uint32_t v) {
     v = (127 & v) << 26;
     _d = _d << 6 >> 6; 
@@ -69,13 +72,16 @@ void Inst::setd(int v) {
     _d = v;
 }
 
+// deprecated!
 // translate inst to binary-chars, format->6 5 5 5 5 6;
 int Inst::trans2z(char* s) {
     char b[32];
     for(int i=0; i<32; ++i) {
-        b[32-i] = ((s[i] & ((uint32_t)1<<i)) != 0) ? '1' : '0';
+        b[31-i] = ((s[i] & ((uint32_t)1<<i)) != 0) ? '1' : '0';
     }
     char* p = &b[0], *q = s; 
+
+    // copy from b
     int cnt = 0;
     while(cnt < 6) {
         int sz = (cnt==1 || cnt==5) ? 6:5;
@@ -115,7 +121,7 @@ int Bin2buf::__zflush() {
     return 0;
 }
 
-// assuming the test-file will not be very large.
+// assuming the test-file is less than 10M.
 int Bin2buf::open_in_file (const char* sf) {
     if (fd) close(fd);
     fd = open(sf, O_RDONLY, 0644);
@@ -127,8 +133,14 @@ int Bin2buf::open_in_file (const char* sf) {
         return -1;
     if (fbuf) 
         free(fbuf);
+
     // read all data
     fbuf = (char*)malloc(fsize + 1000);
+    if (!fbuf) {
+        printf("File too large, failed to allocate \
+                buffer.\n");
+        exit(0);
+    }
     memset(fbuf, 0, sizeof(fsize+1000));
     int tsz = 0;
     while(tsz < fsize) 
@@ -147,7 +159,7 @@ int Bin2buf::open_out_file(const char* sf) {
         return -1;
     }
     if (ofbuf) free(ofbuf);
-    ofbuf = (char*) malloc(buf_sz); 
+    ofbuf = (char*) malloc(out_buf_sz); 
     ocpos = 0;
     return 0;
 }
@@ -167,7 +179,7 @@ int Bin2buf::get_inst(Inst& dst) {
 
 // write string to buffer
 int Bin2buf::write_buf(const char* s, int sz) {
-    if (ocpos + sz >= buf_sz) {
+    if (ocpos + sz >= out_buf_sz) {
         if (__zflush() == -1) 
             return -1;
     }
