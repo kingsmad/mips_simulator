@@ -1,8 +1,10 @@
 /*************************************************************************
     > File Name: disassembler.h
 ************************************************************************/
+#ifndef DISASSEMBLER_H
+#define DISASSEMBLER_H
+#include "bin2buf.h"
 using namespace std;
-class Inst;
 const int _ref_map_sz = 128;
 
 class Disassembler {
@@ -12,6 +14,7 @@ class Disassembler {
     static DisF _dis_submap_zero[_ref_map_sz];
     static DisF _dis_submap_one[_ref_map_sz];
     bool _on_data_seg; // indicate if it is on data segments.
+    InstExecHelper* hp;
 private:
     int __str2six(const char*); // six bits-string to int
     void __init_dis_map();
@@ -55,3 +58,4 @@ public:
     int dis_nor(Inst&, char*);
     int dis_nop(Inst&, char*);
 };
+#endif

@@ -33,12 +33,13 @@ ll powmod(ll a,ll b, ll MOD) {ll res=1;a%=MOD;for(;b;b>>=1){if(b&1)res=res*a%MOD
 void buginfo(const char* f, ...) {if(!debug)return;va_list al; va_start(al, f);vprintf(f, al);va_end(al);}
 /*----------- head-----------*/
 
-#include "bin2buf.h"
-#include "disassembler.h"
+#include "sim.h"
 
 int main(int argc, char** argv) {
     Bin2buf bin2buf;
     Disassembler disa;
+
+    bool kssim = true;
 
     // Setup input && output files.
     char* inf = (char*) malloc(100);
@@ -63,15 +64,25 @@ int main(int argc, char** argv) {
         }
     }
     
-    // do the job
-    Inst ist;     
-    int pc_cnt = 600;
-    char* s = (char*)malloc(200);
-    while(bin2buf.get_inst(ist) != -1) {
-        memset(s, 0, 200);
-        disa.proc(ist, s, pc_cnt);
-        bin2buf.write_buf(s, strlen(s));
+    if (!kssim) {
+        // do the job
+        Inst ist;     
+        int pc_cnt = 600;
+        char* s = (char*)malloc(200);
+        while(bin2buf.get_inst(ist) != -1) {
+            memset(s, 0, 200);
+            disa.proc(ist, s, pc_cnt);
+            bin2buf.write_buf(s, strlen(s));
+        }
+
+        return 0;
     }
+
+    Simulator sim;
+    sim.setMM(&bin2buf);
+    sim.setibuf(&bin2buf);
+    
+    int pc_cnt = 600;
      
     return 0;
 }

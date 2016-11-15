@@ -4,6 +4,7 @@
 #include "bin2buf.h"
 #include <fcntl.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -94,6 +95,12 @@ int Inst::trans2z(char* s) {
     return 0;
 }
 
+bool Inst::isbreak() {
+    return op() == 0 && fc() == 13;
+}
+
+/* Designed for simulator */
+
 Bin2buf::Bin2buf() {
     fd = fsize = cpos = 0;
     ofd = ocpos = 0;
@@ -177,6 +184,47 @@ int Bin2buf::get_inst(Inst& dst) {
     return 0;
 }
 
+void Bin2buf::readall_inst() {
+    int pc = 600;
+    bool data =false;
+    Inst ist;
+    while(cpos < fsize) {
+        uint32_t t;
+        memcpy(&t, fbuf+cpos, 4);
+        if (!data) { /*instructions*/
+            ist.setd(htonl(t));
+            pc2ist[pc] = ist;
+        } else { /*data seg*/
+            pc2mem[pc] = t; 
+        }
+
+        if (!data && ist.isbreak()) {
+            data_seg = pc+4; 
+            data = true;
+        }
+
+        pc += 4;
+        cpos += 4;
+    }
+    data_end = pc;
+}
+
+void Bin2buf::setmem(int x, int v) {
+    pc2mem[x] = v;
+}
+
+int Bin2buf::getmem(int x) {
+    assert(pc2mem.count(x) > 0);
+    return pc2mem[x];
+}
+
+Inst* Bin2buf::get_pc2ist(int pc) {
+    assert(pc2ist.count(pc) > 0);
+    Inst* ist = new Inst;
+    *ist = pc2ist[pc];
+    return ist;
+}
+
 // write string to buffer
 int Bin2buf::write_buf(const char* s, int sz) {
     if (ocpos + sz >= out_buf_sz) {
@@ -186,6 +234,24 @@ int Bin2buf::write_buf(const char* s, int sz) {
     
     memcpy(ofbuf+ocpos, s, sz);
     ocpos += sz;
+    return 0;
+}
+
+int Bin2buf::mmprint(char* s) {
+    int offset = 0;
+    offset += sprintf(s+offset, "Data Segment:\n");
+    for (int i=data_seg; i<data_end; i+=32) {
+        offset += sprintf(s+offset, "R%02d:", i);
+        for (int j=i; j<i+32; j+=4) {
+            offset += sprintf(s+offset, "    %d", getmem(j)); 
+        }
+        offset += sprintf(s+offset, "\n");
+    }
+
+    return offset;
+}
+
+int Bin2buf::ibufprint(char* s) {
     return 0;
 }
 

@@ -3,6 +3,7 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include "disassembler.h"
+#include "sim.h"
 using namespace std;
 
 typedef int (Disassembler::*DisF)(Inst&, char*);
@@ -50,13 +51,16 @@ int Disassembler::proc(Inst& ist, char* s, int& pc) {
 }
 
 int Disassembler::proc_inst(Inst& ist, char* s, int& pc) {
+    /*Record current pc : textline*/
+    ist.settextline(pc);
     int p = 0;
-    p += trans2z(ist, s);
-    p += sprintf(s+p, " %d ", pc);
+    if (!s) p += trans2z(ist, s);
+    if (!s) p += sprintf(s+p, " %d ", pc);
     p += trans2t(ist, s+p); 
 
-    s[p++] = '\n';
+    if (!s) s[p++] = '\n';
     pc += 4;
+
     return p;
 }
 
@@ -141,73 +145,318 @@ int Disassembler::__dis_sub1_one(Inst& ist, char* s) {
 
 // 101011
 int Disassembler::dis_sw(Inst& ist, char* s) {
+    ist.para_typ[0] = ist.REGISTER;
+    ist.para_val[0] = ist.rt();
+    ist.para_typ[1] = ist.IMMEDIATE;
+    ist.para_val[1] = ist.getiv();
+    ist.para_typ[2] = ist.REGISTER;
+    ist.para_val[2] = ist.rs();
+    ist.dst_typ = ist.MEMORY_CHAO;
+    ist.res_status = 2;
+    ist.exec = [&]() {
+        --ist.res_status;
+        if (ist.res_status == 1) {
+            int r = hp->exec_get(ist.para_typ[2], ist.para_val[2]);
+            /*mem addr is resolved, we can re-link tags now*/
+            ist.dst_typ = ist.MEMORY;
+            ist.dst_val = r + ist.para_val[1];
+            hp->linktag(ist.getid()); /*generate fake_dst_typ & fake_dst_val*/ 
+            return;
+        }
+        /*Second stage*/ 
+        int r = hp->exec_get(ist.para_typ[0], ist.para_val[0]);
+        hp->exec_set(ist.getid(), ist.fake_dst_typ, ist.fake_dst_val, r);
+    };
+
+    if (!s) 
+        return sprintf(ist.ori_str, "SW R%d, %d(R%d)", ist.rt(), \
+                ist.getiv(), ist.rs());
     return sprintf(s, "SW R%d, %d(R%d)", ist.rt(), \
             ist.getiv(), ist.rs());
 }
 
 // 100011
 int Disassembler::dis_lw(Inst& ist, char* s) {
-    return sprintf(s, "LW R%d, %d(R%d)", ist.rt(), \
-            ist.getiv(), ist.rs());\
+    ist.para_typ[0] = ist.NONE;
+    ist.para_typ[1] = ist.IMMEDIATE;
+    ist.para_typ[2] = ist.REGISTER;
+    ist.para_val[1] = ist.getiv();
+    ist.para_val[2] = ist.rs();
+    /*dst info*/
+    ist.dst_typ = ist.REGISTER;
+    ist.dst_val = ist.rt();
+    ist.res_status = 2;
+    ist.exec = [&]() {
+        --ist.res_status;
+        if (ist.res_status == 1) {
+            int p = hp->exec_get(ist.para_typ[2], ist.para_val[2]);
+            p += ist.para_val[1];
+            ist.para_typ[0] = ist.MEMORY;
+            ist.para_val[0] = p;
+            hp->linktag(ist.getid());
+            return;
+        }
+        /*Second stage*/
+        int r = hp->exec_get(ist.para_typ[0], ist.para_val[0]);
+        hp->exec_set(ist.getid(), ist.fake_dst_typ, ist.fake_dst_val, r);
+    };
+
+    if (!s)
+        return sprintf(ist.ori_str, "LW R%d, %d(R%d)", ist.rt(), \
+                ist.getiv(), ist.rs());
+    else
+        return sprintf(s, "LW R%d, %d(R%d)", ist.rt(), \
+                ist.getiv(), ist.rs());
 }
 
 // 000010 bug here
 int Disassembler::dis_j(Inst& ist, char* s) {
     uint32_t d = ist.getv(0, 25);
     d = d << 2;
+    ist.para_typ[0] = ist.IMMEDIATE;
+    ist.para_val[0] = ist.rt();
+    ist.res_status = 2;
+    ist.isbranch = true;
+    ist.dst_typ = ist.NONE;
+    ist.exec = [&]() {
+        --ist.res_status;
+        if (ist.res_status == 1) {
+            hp->might_jump(ist.getid(), ist.rt());
+            return;
+        }
+        hp->confirm_jump(ist.getid(), true);
+    };
+
+    if (!s) 
+        return sprintf(ist.ori_str, "J #%d", d);
+
     return sprintf(s, "J #%d", d);
 }
 
 //000100 the offset requires 2 bits shift.
 int Disassembler::dis_beq(Inst& ist, char* s) {
+    ist.para_typ[0] = ist.para_typ[1] = ist.REGISTER;
+    ist.para_typ[2] = ist.IMMEDIATE;
+    ist.para_val[0] = ist.rs();
+    ist.para_val[1] = ist.rt();
+    ist.para_val[2] = ist.getiv()<<2;
+    ist.res_status = 2;
+    ist.dst_typ = ist.NONE;
+    ist.isbranch = true;
+    ist.exec = [&]() {
+        --ist.res_status;
+        if (ist.res_status == 1) { /* IF stage */
+            hp->might_jump(ist.getid(), ist.para_val[2]);
+            return;
+        }
+        int p = hp->exec_get(ist.para_typ[0], ist.para_val[0]);
+        int q = hp->exec_get(ist.para_typ[1], ist.para_val[1]);
+        if (p == q) hp->confirm_jump(ist.getid(), true);
+        else hp->confirm_jump(ist.getid(), false);
+    };
+
+    if (!s)
+        return sprintf(ist.ori_str, "BEQ R%d, R%d, #%d", ist.rs(), \
+                ist.rt(), ist.getiv()<<2);
+
     return sprintf(s, "BEQ R%d, R%d, #%d", ist.rs(), \
             ist.rt(), ist.getiv()<<2);
 }
 
 // 000101
 int Disassembler::dis_bne(Inst& ist, char* s) {
+    ist.para_typ[0] = ist.para_typ[1] = ist.REGISTER;
+    ist.para_typ[2] = ist.IMMEDIATE;
+    ist.para_val[0] = ist.rs();
+    ist.para_val[1] = ist.rt();
+    ist.para_val[2] = ist.getiv()<<2;
+    ist.res_status = 2;
+    ist.isbranch = true;
+    ist.dst_typ = ist.NONE;
+    ist.exec = [&]() {
+        --ist.res_status;
+        if (ist.res_status == 1) { /* IF stage */
+            hp->might_jump(ist.getid(), ist.para_val[2]);
+            return;
+        }
+        int p = hp->exec_get(ist.para_typ[0], ist.para_val[0]);
+        int q = hp->exec_get(ist.para_typ[1], ist.para_val[1]);
+        if (p != q) hp->confirm_jump(ist.getid(), true);
+        else hp->confirm_jump(ist.getid(), false);
+    };
+
+    if (!s) 
+        return sprintf(ist.ori_str, "BNE R%d, R%d, #%d", ist.rs(), \
+                ist.rt(), ist.getiv()<<2);
+
     return sprintf(s, "BNE R%d, R%d, #%d", ist.rs(), \
-        ist.rt(), ist.getiv()<<2);
+            ist.rt(), ist.getiv()<<2);
 }
 
 
 // 000001
 int Disassembler::dis_bgez(Inst& ist, char* s) {
+    ist.para_typ[0] = ist.REGISTER;
+    ist.para_val[0] = ist.rs();
+    ist.para_typ[1] = ist.IMMEDIATE;
+    ist.para_val[1] = ist.getiv()<<2;
+    ist.res_status = 2;
+    ist.isbranch = true;
+    ist.dst_typ = ist.NONE;
+    ist.exec = [&]() {
+        --ist.res_status;
+        if (ist.res_status == 1) { /*IF stage*/
+            hp->might_jump(ist.getid(), ist.para_val[1]);
+            return;
+        }
+        int p = hp->exec_get(ist.para_typ[0], ist.para_val[0]);
+        if (p >= 0) hp->confirm_jump(ist.getid(), true);
+        else hp->confirm_jump(ist.getid(), false);
+    };
+
+    if (!s)
+        return sprintf(ist.ori_str, "BGEZ R%d, #%d", ist.rs(), \
+                ist.getiv()<<2);
     return sprintf(s, "BGEZ R%d, #%d", ist.rs(), \
             ist.getiv()<<2);
 }
 
 // 000111
 int Disassembler::dis_bgtz(Inst& ist, char* s) {
+    ist.para_typ[0] = ist.REGISTER;
+    ist.para_val[0] = ist.rs();
+    ist.para_typ[1] = ist.IMMEDIATE;
+    ist.para_val[1] = ist.getiv()<<2;
+    ist.res_status = 2;
+    ist.dst_typ = ist.NONE;
+    ist.isbranch = true;
+    ist.exec = [&]() {
+        --ist.res_status;
+        if (ist.res_status == 1) { /*IF stage*/
+            hp->might_jump(ist.getid(), ist.para_val[1]);
+            return;
+        }
+        int p = hp->exec_get(ist.para_typ[0], ist.para_val[0]);
+        if (p > 0) hp->confirm_jump(ist.getid(), true);
+        else hp->confirm_jump(ist.getid(), false);
+    };
+
+    if (!s) 
+        return sprintf(ist.ori_str, "BGTZ R%d, #%d", ist.rs(), \
+                ist.getiv()<<2);
     return sprintf(s, "BGTZ R%d, #%d", ist.rs(), \
             ist.getiv()<<2);
 }
 
 // 000110
 int Disassembler::dis_blez(Inst& ist, char* s) {
+    ist.para_typ[0] = ist.REGISTER;
+    ist.para_val[0] = ist.rs();
+    ist.para_typ[1] = ist.IMMEDIATE;
+    ist.para_val[1] = ist.getiv()<<2;
+    ist.res_status = 2;
+    ist.dst_typ = ist.NONE;
+    ist.isbranch = true;
+    ist.exec = [&]() {
+        --ist.res_status;
+        if (ist.res_status == 1) { /*IF stage*/
+            hp->might_jump(ist.getid(), ist.para_val[1]);
+            return;
+        }
+        int p = hp->exec_get(ist.para_typ[0], ist.para_val[0]);
+        if (p <= 0) hp->confirm_jump(ist.getid(), true);
+        else hp->confirm_jump(ist.getid(), false);
+    };
+
+    if (!s)
+        return sprintf(ist.ori_str, "BLEZ R%d, #%d", ist.rs(), \
+                ist.getiv()<<2);
+
     return sprintf(s, "BLEZ R%d, #%d", ist.rs(), \
             ist.getiv()<<2);
 }
 
 // 000001
 int Disassembler::dis_bltz(Inst& ist, char* s) {
+    ist.para_typ[0] = ist.REGISTER;
+    ist.para_val[0] = ist.rs();
+    ist.para_typ[1] = ist.IMMEDIATE;
+    ist.para_val[1] = ist.getiv()<<2;
+    ist.res_status = 2;
+    ist.dst_typ = ist.NONE;
+    ist.isbranch = true;
+    ist.exec = [&]() {
+        --ist.res_status;
+        if (ist.res_status == 1) { /*IF stage*/
+            hp->might_jump(ist.getid(), ist.para_val[1]);
+            return;
+        }
+        int p = hp->exec_get(ist.para_typ[0], ist.para_val[0]);
+        if (p < 0) hp->confirm_jump(ist.getid(), true);
+        else hp->confirm_jump(ist.getid(), false);
+    };
+
+    if (!s)
+        return sprintf(ist.ori_str, "BLTZ R%d, #%d", ist.rs(), \
+                ist.getiv()<<2);
+
     return sprintf(s, "BLTZ R%d, #%d", ist.rs(), \
             ist.getiv()<<2);
 }
 
 // 001000
 int Disassembler::dis_addi(Inst& ist, char* s) {
-   return sprintf(s, "ADDI R%d, R%d, #%d", ist.rt(), \
-           ist.rs(), ist.getiv());
+    ist.para_typ[0] = ist.para_typ[1] = ist.REGISTER;
+    ist.para_typ[2] = ist.IMMEDIATE;
+    ist.para_val[0] = ist.rt();
+    ist.para_val[1] = ist.rs();
+    ist.para_val[2] = ist.getiv();
+    ist.dst_typ = ist.para_typ[0];
+    ist.dst_val = ist.para_val[0];
+    ist.res_status = 1;
+    ist.exec = [&]() {
+        --ist.res_status;
+        int p = hp->exec_get(ist.para_typ[0], ist.para_val[0]);
+        int q = hp->exec_get(ist.para_typ[1], ist.para_val[1]);
+        p += q + ist.para_val[2];
+        hp->exec_set(ist.getid(), ist.para_typ[0], ist.para_val[0], p);
+    };
+
+    if (!s)
+        return sprintf(ist.ori_str, "ADDI R%d, R%d, #%d", ist.rt(), \
+                ist.rs(), ist.getiv());
+
+    return sprintf(s, "ADDI R%d, R%d, #%d", ist.rt(), \
+            ist.rs(), ist.getiv());
 }
 
 // 001001
 int Disassembler::dis_addiu(Inst& ist, char* s) {
+    ist.para_typ[0] = ist.para_typ[1] = ist.REGISTER;
+    ist.para_typ[2] = ist.IMMEDIATE;
+    ist.para_val[0] = ist.rt();
+    ist.para_val[1] = ist.rs();
+    ist.para_val[2] = ist.getiv();
+    ist.dst_typ = ist.para_typ[0];
+    ist.dst_val = ist.para_val[0];
+    ist.res_status = 1;
+    ist.exec = [&]() {
+        --ist.res_status;
+        uint32_t p = hp->exec_get(ist.para_typ[0], ist.para_val[0]);
+        uint32_t q = hp->exec_get(ist.para_typ[1], ist.para_val[1]);
+        p += q + ist.para_val[2];
+        hp->exec_set(ist.getid(), ist.para_typ[0], ist.para_val[0], p);
+    };
+
+    if (!s)
+        return sprintf(ist.ori_str, "ADDIU R%d, R%d, #%d", ist.rt(), \
+                ist.rs(), ist.getiv());
     return sprintf(s, "ADDIU R%d, R%d, #%d", ist.rt(), \
             ist.rs(), ist.getiv());
 }
 
-// 000000 - last6: 001101
+// 000000 - last6: 001101 
+/*bug Waiting for fix*/
 int Disassembler::dis_break(Inst& ist, char* s) {
     this->_on_data_seg = true;
     return sprintf(s, "BREAK");
@@ -215,18 +464,80 @@ int Disassembler::dis_break(Inst& ist, char* s) {
 
 // 000000 - last6: 101010
 int Disassembler::dis_slt(Inst& ist, char* s) {
+    ist.para_typ[0] = ist.para_typ[1] = ist.para_typ[2] = \
+                      ist.REGISTER;
+    ist.para_val[0] = ist.rd();
+    ist.para_val[1] = ist.rs();
+    ist.para_val[2] = ist.rt();
+    ist.dst_typ = ist.para_typ[0];
+    ist.dst_val = ist.para_val[0];
+    ist.res_status = 1;
+    ist.exec = [&]() {
+        --ist.res_status;
+        int p = hp->exec_get(ist.para_typ[1], ist.para_val[1]);
+        int q = hp->exec_get(ist.para_typ[2], ist.para_val[2]);
+        if (p < q)
+            hp->exec_set(ist.getid(), ist.para_typ[0], ist.para_val[0], 1);
+        else 
+            hp->exec_set(ist.getid(), ist.para_typ[0], ist.para_val[0], 0);
+    };
+    if (!s)
+        return sprintf(ist.ori_str, "SLT R%d, R%d, R%d", ist.rd(), \
+                ist.rs(), ist.rt());
     return sprintf(s, "SLT R%d, R%d, R%d", ist.rd(), \
             ist.rs(), ist.rt());
 }
 
 // 001010
 int Disassembler::dis_slti(Inst& ist, char* s) {
+    ist.para_typ[0] = ist.para_typ[1] = ist.REGISTER;
+    ist.para_typ[2] = ist.IMMEDIATE;
+    ist.para_val[0] = ist.rt();
+    ist.para_val[1] = ist.rs();
+    ist.para_val[2] = ist.getiv();
+    ist.dst_typ = ist.para_typ[0];
+    ist.dst_val = ist.para_val[0];
+    ist.res_status = 1;
+    ist.exec = [&]() {
+        --ist.res_status;
+        int p = hp->exec_get(ist.para_typ[1], ist.para_val[1]);
+        int q = ist.getiv();
+        if (p < q)
+            hp->exec_set(ist.getid(), ist.para_typ[0], ist.para_val[0], 1);
+        else 
+            hp->exec_set(ist.getid(), ist.para_typ[0], ist.para_val[0], 0);
+    };
+
+    if (!s)
+        return sprintf(s, "SLTI R%d, R%d, #%d", ist.rt(), \
+                ist.rs(), ist.getiv());
     return sprintf(s, "SLTI R%d, R%d, #%d", ist.rt(), \
             ist.rs(), ist.getiv());
 }
 
 // 000000 - last6: 101011
 int Disassembler::dis_sltu(Inst& ist, char* s) {
+    ist.para_typ[0] = ist.para_typ[1] = ist.para_typ[2] = \
+                      ist.REGISTER;
+    ist.para_val[0] = ist.rd();
+    ist.para_val[1] = ist.rs();
+    ist.para_val[2] = ist.rt();
+    ist.dst_typ = ist.para_typ[0];
+    ist.dst_val = ist.para_val[0];
+    ist.res_status = 1;
+    ist.exec = [&]() {
+        --ist.res_status;
+        uint32_t p = hp->exec_get(ist.para_typ[1], ist.para_val[1]);
+        uint32_t q = hp->exec_get(ist.para_typ[2], ist.para_val[2]);
+        if (p < q)
+            hp->exec_set(ist.getid(), ist.para_typ[0], ist.para_val[0], 1);
+        else 
+            hp->exec_set(ist.getid(), ist.para_typ[0], ist.para_val[0], 0);
+    };
+
+    if (!s)
+        return sprintf(ist.ori_str, "SLT R%d, R%d, R%d", ist.rd(), \
+                ist.rs(), ist.rt());
     return sprintf(s, "SLTU R%d, R%d, R%d", ist.rd(), \
             ist.rs(), ist.rt());
 }
@@ -234,74 +545,286 @@ int Disassembler::dis_sltu(Inst& ist, char* s) {
 // 000000 - last6: 000000
 // overlap with nop
 int Disassembler::dis_sll_nop(Inst& ist, char* s) {
-    if (ist.d() == 0) 
+    if (ist.d() == 0) {
+        ist.res_status = 1;
+        ist.exec = [&]() {
+            --ist.res_status;
+        };
+
+        if (!s)
+            return sprintf(ist.ori_str, "NOP");
+
         return sprintf(s, "NOP");
-    else 
-        return sprintf(s, "SLL R%d, R%d, #%d", ist.rd(), \
+    }  
+    ist.para_typ[0] = ist.REGISTER;
+    ist.para_typ[1] = ist.REGISTER;
+    ist.para_typ[2] = ist.IMMEDIATE;
+    ist.para_val[0] = ist.rd();
+    ist.para_val[1] = ist.rt();
+    ist.para_val[2] = ist.sa();
+    ist.dst_typ = ist.para_typ[0];
+    ist.dst_val = ist.para_val[0];
+    ist.res_status = 1;
+    ist.exec = [&]() {
+        --ist.res_status;
+        int q = hp->exec_get(ist.para_typ[1], ist.para_val[1]);
+        q = q << ist.para_val[2];
+        hp->exec_set(ist.getid(), ist.para_typ[0], ist.para_val[0], q);
+    };
+
+    if (!s)
+        return sprintf(&ist.ori_str[0], "SLL R%d, R%d, #%d", ist.rd(), \
+            ist.rt(), ist.sa());
+
+    return sprintf(s, "SLL R%d, R%d, #%d", ist.rd(), \
             ist.rt(), ist.sa());
 }
 
 // 000000 - last6: 000010
 int Disassembler::dis_srl(Inst& ist, char* s) {
+    ist.para_typ[0] = ist.para_typ[1] = ist.REGISTER;
+    ist.para_typ[2] = ist.IMMEDIATE;
+    ist.para_val[0] = ist.rd();
+    ist.para_val[1] = ist.rt();
+    ist.para_val[2] = ist.sa();
+    ist.dst_typ = ist.para_typ[0];
+    ist.dst_val = ist.para_val[0];
+    ist.res_status = 1;
+    ist.exec = [&]() {
+        --ist.res_status;
+        int q = hp->exec_get(ist.para_typ[1], ist.para_val[1]);
+        int c = ist.para_val[2];
+        q = q >> c;
+        /*It is logical shift*/
+        for (int i=0; i<c; ++i)
+            q = q & (~(1<<(31-i)));
+        hp->exec_set(ist.getid(), ist.para_typ[0], ist.para_val[0], q);
+    };
+
+    if (!s)
+        return sprintf(ist.ori_str, "SRL R%d, R%d, #%d", ist.rd(), \
+                ist.rt(), ist.sa());
     return sprintf(s, "SRL R%d, R%d, #%d", ist.rd(), \
             ist.rt(), ist.sa());
 }
 
 // 000000 - last6: 000011
 int Disassembler::dis_sra(Inst& ist, char* s) {
+    ist.para_typ[0] = ist.para_typ[1] = ist.REGISTER;
+    ist.para_typ[2] = ist.IMMEDIATE;
+    ist.para_val[0] = ist.rd();
+    ist.para_val[1] = ist.rt();
+    ist.para_val[2] = ist.sa();
+    ist.dst_typ = ist.para_typ[0];
+    ist.dst_val = ist.para_val[0];
+    ist.res_status = 1;
+    ist.exec = [&]() {
+        --ist.res_status;
+        int q = hp->exec_get(ist.para_typ[1], ist.para_val[1]);
+        int c = ist.para_val[2];
+        q = q >> c;
+        hp->exec_set(ist.getid(), ist.para_typ[0], ist.para_val[0], q);
+    };
+
+    if (!s)
+        return sprintf(ist.ori_str, "SRA R%d, R%d, #%d", ist.rd(), \
+                ist.rt(), ist.sa());
     return sprintf(s, "SRA R%d, R%d, #%d", ist.rd(), \
             ist.rt(), ist.sa());
 }
 
 // 000000 - last6: 100010
 int Disassembler::dis_sub(Inst& ist, char* s) {
+    ist.para_typ[0] = ist.para_typ[1] = ist.para_typ[2] \
+                      = ist.REGISTER;
+    ist.para_val[0] = ist.rd();
+    ist.para_val[1] = ist.rs();
+    ist.para_val[2] = ist.rt();
+    ist.dst_typ = ist.para_typ[0];
+    ist.dst_val = ist.para_val[0];
+    ist.res_status = 1;
+    ist.exec = [&]() {
+        --ist.res_status;
+        int p = hp->exec_get(ist.para_typ[1], ist.para_val[1]);
+        int q = hp->exec_get(ist.para_typ[2], ist.para_val[2]);
+        hp->exec_set(ist.getid(), ist.para_typ[0], ist.para_val[0], p-q);
+    };
+
+    if (!s)
+        return sprintf(ist.ori_str, "SUB R%d, R%d, R%d", ist.rd(), \
+                ist.rs(), ist.rt());
     return sprintf(s, "SUB R%d, R%d, R%d", ist.rd(), \
             ist.rs(), ist.rt());
 }
 
 // 000000 - last6: 100011
 int Disassembler::dis_subu(Inst& ist, char* s) {
+    ist.para_typ[0] = ist.para_typ[1] = ist.para_typ[2] \
+                      = ist.REGISTER;
+    ist.para_val[0] = ist.rd();
+    ist.para_val[1] = ist.rs();
+    ist.para_val[2] = ist.rt();
+    ist.dst_typ = ist.para_typ[0];
+    ist.dst_val = ist.para_val[0];
+    ist.res_status = 1;
+    ist.exec = [&]() {
+        --ist.res_status;
+        uint32_t p = hp->exec_get(ist.para_typ[1], ist.para_val[1]);
+        uint32_t q = hp->exec_get(ist.para_typ[2], ist.para_val[2]);
+        hp->exec_set(ist.getid(), ist.para_typ[0], ist.para_val[0], p-q);
+    };
+
+    if (!s)
+        return sprintf(ist.ori_str, "SUBU R%d, R%d, R%d", ist.rd(), \
+                ist.rs(), ist.rt());
     return sprintf(s, "SUBU R%d, R%d, R%d", ist.rd(), \
             ist.rs(), ist.rt());
 }
 
 // 000000 - last6: 100000
 int Disassembler::dis_add(Inst& ist, char* s) {
+    ist.para_typ[0] = ist.para_typ[1] = ist.para_typ[2] \
+                      = ist.REGISTER;
+    ist.para_val[0] = ist.rd();
+    ist.para_val[1] = ist.rs();
+    ist.para_val[2] = ist.rt();
+    ist.dst_typ = ist.para_typ[0];
+    ist.dst_val = ist.para_val[0];
+    ist.res_status = 1;
+    ist.exec = [&]() {
+        --ist.res_status;
+        int p = hp->exec_get(ist.para_typ[1], ist.para_val[1]);
+        int q = hp->exec_get(ist.para_typ[2], ist.para_val[2]);
+        hp->exec_set(ist.getid(), ist.para_typ[0], ist.para_val[0], p+q);
+    };
+
+    if (!s)
+        return sprintf(ist.ori_str, "ADD R%d, R%d, R%d", ist.rd(), \
+                ist.rs(), ist.rt());
     return sprintf(s, "ADD R%d, R%d, R%d", ist.rd(), \
             ist.rs(), ist.rt());
 }
 
 // 000000 - last6: 100001
 int Disassembler::dis_addu(Inst& ist, char* s) {
+    ist.para_typ[0] = ist.para_typ[1] = ist.para_typ[2] \
+                      = ist.REGISTER;
+    ist.para_val[0] = ist.rd();
+    ist.para_val[1] = ist.rs();
+    ist.para_val[2] = ist.rt();
+    ist.dst_typ = ist.para_typ[0];
+    ist.dst_val = ist.para_val[0];
+    ist.res_status = 1;
+    ist.exec = [&]() {
+        --ist.res_status;
+        uint32_t p = hp->exec_get(ist.para_typ[1], ist.para_val[1]);
+        uint32_t q = hp->exec_get(ist.para_typ[2], ist.para_val[2]);
+        hp->exec_set(ist.getid(), ist.para_typ[0], ist.para_val[0], p+q);
+    };
+    if (!s)
+        return sprintf(ist.ori_str, "ADDU R%d, R%d, R%d", ist.rd(), \
+                ist.rs(), ist.rt());
     return sprintf(s, "ADDU R%d, R%d, R%d", ist.rd(), \
             ist.rs(), ist.rt());
 }
 
 // 000000 - last6: 100100
 int Disassembler::dis_and(Inst& ist, char* s) {
+    ist.para_typ[0] = ist.para_typ[1] = ist.para_typ[2] \
+                      = ist.REGISTER;
+    ist.para_val[0] = ist.rd();
+    ist.para_val[1] = ist.rs();
+    ist.para_val[2] = ist.rt();
+    ist.dst_typ = ist.para_typ[0];
+    ist.dst_val = ist.para_val[0];
+    ist.res_status = 1;
+    ist.exec = [&]() {
+        --ist.res_status;
+        int p = hp->exec_get(ist.para_typ[1], ist.para_val[1]);
+        int q = hp->exec_get(ist.para_typ[2], ist.para_val[2]);
+        hp->exec_set(ist.getid(), ist.para_typ[0], ist.para_val[0], p&q);
+    };
+    if (!s)
+        return sprintf(ist.ori_str, "AND R%d, R%d, R%d", ist.rd(), \
+                ist.rs(), ist.rt());
     return sprintf(s, "AND R%d, R%d, R%d", ist.rd(), \
             ist.rs(), ist.rt());
 }
 
 // 000000 - last6: 100101
 int Disassembler::dis_or(Inst& ist, char* s) {
+    ist.para_typ[0] = ist.para_typ[1] = ist.para_typ[2] \
+                      = ist.REGISTER;
+    ist.para_val[0] = ist.rd();
+    ist.para_val[1] = ist.rs();
+    ist.para_val[2] = ist.rt();
+    ist.dst_typ = ist.para_typ[0];
+    ist.dst_val = ist.para_val[0];
+    ist.res_status = 1;
+    ist.exec = [&]() {
+        --ist.res_status;
+        int p = hp->exec_get(ist.para_typ[1], ist.para_val[1]);
+        int q = hp->exec_get(ist.para_typ[2], ist.para_val[2]);
+        hp->exec_set(ist.getid(), ist.para_typ[0], ist.para_val[0], p|q);
+    };
+
+    if (!s)
+        return sprintf(ist.ori_str, "OR R%d, R%d, R%d", ist.rd(), \
+                ist.rs(), ist.rt());
     return sprintf(s, "OR R%d, R%d, R%d", ist.rd(), \
             ist.rs(), ist.rt());
 }
 
 // 000000 - last6: 100110
 int Disassembler::dis_xor(Inst& ist, char* s) {
+    ist.para_typ[0] = ist.para_typ[1] = ist.para_typ[2] \
+                      = ist.REGISTER;
+    ist.para_val[0] = ist.rd();
+    ist.para_val[1] = ist.rs();
+    ist.para_val[2] = ist.rt();
+    ist.res_status = 1;
+    ist.dst_typ = ist.para_typ[0];
+    ist.dst_val = ist.para_val[0];
+    ist.exec = [&]() {
+        --ist.res_status;
+        int p = hp->exec_get(ist.para_typ[1], ist.para_val[1]);
+        int q = hp->exec_get(ist.para_typ[2], ist.para_val[2]);
+        hp->exec_set(ist.getid(), ist.para_typ[0], ist.para_val[0], p^q);
+    };
+    if (!s)
+        return sprintf(ist.ori_str, "XOR R%d, R%d, R%d", ist.rd(), \
+                ist.rs(), ist.rt());
     return sprintf(s, "XOR R%d, R%d, R%d", ist.rd(), \
             ist.rs(), ist.rt());
 }
 
 // 000000 - last6: 100111 
 int Disassembler::dis_nor(Inst& ist, char* s) {
+    ist.para_typ[0] = ist.para_typ[1] = ist.para_typ[2] \
+                      = ist.REGISTER;
+    ist.para_val[0] = ist.rd();
+    ist.para_val[1] = ist.rs();
+    ist.para_val[2] = ist.rt();
+    ist.dst_typ = ist.para_typ[0];
+    ist.dst_val = ist.para_val[0];
+    ist.res_status = 1;
+    ist.exec = [&]() {
+        --ist.res_status;
+        int p = hp->exec_get(ist.para_typ[1], ist.para_val[1]);
+        int q = hp->exec_get(ist.para_typ[2], ist.para_val[2]);
+        int ans = (!p && !q) ? 1 : 0;
+        hp->exec_set(ist.getid(), ist.para_typ[0], ist.para_val[0], ans);
+    };
+
+    if (!s)
+        return sprintf(ist.ori_str, "NOR R%d, R%d, R%d", ist.rd(), \
+                ist.rs(), ist.rt());
     return sprintf(s, "NOR R%d, R%d, R%d", ist.rd(), \
             ist.rs(), ist.rt());
 }
 
 // 000000 - last6: 000000
+/*diprecated*/
 int Disassembler::dis_nop(Inst& ist, char* s) {
     return sprintf(s, "NOP");
 }
