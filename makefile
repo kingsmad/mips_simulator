@@ -1,5 +1,5 @@
 OBJS = disassembler.o bin2buf.o main.o sim.o
-CC = g++
+CC = clang++
 DEBUG = -g
 CFLAGS = -Wall -c $(DEBUG) -std=c++11
 LFLAGS = -Wall $(DEBUG)

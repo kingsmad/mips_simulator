@@ -1,7 +1,7 @@
 /*************************************************************************
     > File Name: main.cpp
 ************************************************************************/
-const bool debug = false;
+const bool debug = true;
 #include <cstdio>
 #include <iostream>
 #include <cmath>
@@ -55,11 +55,13 @@ int main(int argc, char** argv) {
         if (!idone) {
             printf("\nPlease enter input filename:"); 
             scanf("%s", inf);
+            //sprintf(inf, "%s", "fibonacci_bin.bin");
             idone = (bin2buf.open_in_file(inf) != -1);
         }
         if (!odone) {
             printf("\nPlease enter output filename:");
             scanf("%s", otf);
+            //sprintf(otf, "%s", "hi.txt");
             odone = (bin2buf.open_out_file(otf) != -1);
         }
     }
@@ -79,10 +81,10 @@ int main(int argc, char** argv) {
     }
 
     Simulator sim;
-    sim.setMM(&bin2buf);
-    sim.setibuf(&bin2buf);
-    
-    int pc_cnt = 600;
+    sim.setMM(dynamic_cast<MM*>(&bin2buf));
+    sim.setibuf(dynamic_cast<Ibuf*>(&bin2buf));
+    bin2buf.readall_inst();
+    sim.run();
      
     return 0;
 }

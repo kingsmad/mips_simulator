@@ -14,7 +14,7 @@ class Disassembler {
     static DisF _dis_submap_zero[_ref_map_sz];
     static DisF _dis_submap_one[_ref_map_sz];
     bool _on_data_seg; // indicate if it is on data segments.
-    InstExecHelper* hp;
+    //InstExecHelper* hp;
 private:
     int __str2six(const char*); // six bits-string to int
     void __init_dis_map();
@@ -23,6 +23,7 @@ private:
     int __dis_sub1_one(Inst&, char*);
 public:
     Disassembler();
+    //inline void set_hp(InstExecHelper* h) { hp=h;}
     int trans2z(Inst&, char*); // int to string as '655556' form.
     int trans2t(Inst&, char*); // int to text as 'ADDI R1, R8, #12'
     int proc(Inst&, char*, int&); // process Inst, save string

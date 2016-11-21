@@ -14,6 +14,11 @@
 using namespace std;
 const int out_buf_sz = 1e5 + 10; // maximum buffer size for input;
 
+Inst::Inst() {
+    fill(para_typ, para_typ+3, NONE);
+    fill(para_val, para_val, 0);
+}
+
 // get unsigned-int from st-ed bits;
 int Inst::getv(int st, int ed) {
     uint32_t msk = 0;
@@ -242,7 +247,7 @@ int Bin2buf::mmprint(char* s) {
     offset += sprintf(s+offset, "Data Segment:\n");
     for (int i=data_seg; i<data_end; i+=32) {
         offset += sprintf(s+offset, "R%02d:", i);
-        for (int j=i; j<i+32; j+=4) {
+        for (int j=i; j<i+32&&j<data_end; j+=4) {
             offset += sprintf(s+offset, "    %d", getmem(j)); 
         }
         offset += sprintf(s+offset, "\n");

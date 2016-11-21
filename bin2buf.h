@@ -12,6 +12,7 @@ class InstExecHelper {
 public:
     virtual void exec_set(int id, int tpy, int v, int exec_v) = 0;
     virtual int exec_get(int tpy, int v) = 0;
+    virtual void exec_break(int id) = 0;
     virtual void linktag(int id) = 0;
     virtual void might_jump(int id, int dst) = 0;
     virtual void confirm_jump(int id, int dst) = 0;
@@ -25,6 +26,7 @@ class Inst {
     int __textline;
     int ebuf[3]; /*store status for exec*/
 public:
+    InstExecHelper* hp = 0;
     inline uint32_t d() { return _d;}
     int getv(int st, int ed); // get unsigned-int from st-ed;
     int getiv(); // return 0-15 bits as signed int.
@@ -46,6 +48,7 @@ public:
 
     /*Designed for simulator*/
 public:
+    Inst();
     enum __para_type {
         NONE,
         REGISTER,
@@ -61,8 +64,7 @@ public:
     char ori_str[30];
     int res_status = 0;
     bool isbranch = false;
-    inline int getid() { return __id;}
-    inline void setid(int x) { __id = x; }
+    inline int& id() { return __id;}
     inline int textline() { return __textline;}
     inline void settextline(int x) { __textline = x;}
     bool isbreak(); 
@@ -81,6 +83,7 @@ class Ibuf {
 public:
     virtual Inst* get_pc2ist(int pc) = 0;
     virtual int ibufprint(char* s) = 0; 
+    virtual int write_buf(const char*, int) = 0;
 };
 
 // read && write binary-file from/to buffer.
