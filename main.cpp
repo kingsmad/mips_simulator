@@ -39,7 +39,7 @@ int main(int argc, char** argv) {
     Bin2buf bin2buf;
     Disassembler disa;
 
-    bool kssim = true;
+    bool kssim = false;
 
     // Setup input && output files.
     char* inf = (char*) malloc(100);
@@ -53,15 +53,15 @@ int main(int argc, char** argv) {
     }
     while(!idone || !odone) {
         if (!idone) {
-            printf("\nPlease enter input filename:"); 
-            scanf("%s", inf);
-            //sprintf(inf, "%s", "fibonacci_bin.bin");
+            /*printf("\nPlease enter input filename:"); 
+            scanf("%s", inf);*/
+            sprintf(inf, "%s", "fibonacci_bin.bin");
             idone = (bin2buf.open_in_file(inf) != -1);
         }
         if (!odone) {
-            printf("\nPlease enter output filename:");
-            scanf("%s", otf);
-            //sprintf(otf, "%s", "hi.txt");
+            /*printf("\nPlease enter output filename:");
+            scanf("%s", otf);*/
+            sprintf(otf, "%s", "hi.txt");
             odone = (bin2buf.open_out_file(otf) != -1);
         }
     }

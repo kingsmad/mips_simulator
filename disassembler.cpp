@@ -218,15 +218,15 @@ int Disassembler::dis_lw(Inst& ist, char* s) {
 int Disassembler::dis_j(Inst& ist, char* s) {
     uint32_t d = ist.getv(0, 25);
     d = d << 2;
-    ist.para_typ[0] = ist.IMMEDIATE;
-    ist.para_val[0] = ist.rt();
+    /*ist.para_typ[0] = ist.IMMEDIATE;
+    ist.para_val[0] = ist.rt();*/
     ist.res_status = 2;
     ist.isbranch = true;
     ist.dst_typ = ist.NONE;
     ist.exec = [&]() {
         --ist.res_status;
         if (ist.res_status == 1) {
-            ist.hp->might_jump(ist.id(), ist.rt());
+            ist.hp->might_jump(ist.id(), d);
             return;
         }
         ist.hp->confirm_jump(ist.id(), true);
