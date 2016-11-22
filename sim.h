@@ -37,6 +37,7 @@ public:
 struct RobCell {
     int id, typ, v, ans;
     bool ok;
+    RobCell();
 };
 
 struct WBCell {
@@ -84,8 +85,8 @@ public:
     void exec_break(int id);
     void linktag(int id);
     void linktag(Inst& ist);
-    void might_jump(int id, int dst);
-    void confirm_jump(int id, int b);
+    void might_jump(int id, int jtyp, int dst);
+    void confirm_jump(int id, bool ok);
     int robprint(char* s);
     int rsprint(char* s);
     int iqprint(char* s);

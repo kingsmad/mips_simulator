@@ -39,7 +39,7 @@ int main(int argc, char** argv) {
     Bin2buf bin2buf;
     Disassembler disa;
 
-    bool kssim = false;
+    bool kssim = true;
 
     // Setup input && output files.
     char* inf = (char*) malloc(100);

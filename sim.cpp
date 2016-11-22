@@ -99,6 +99,11 @@ bool WBCell::operator < (const WBCell& rhs) const {
     return false;
 }
 
+RobCell::RobCell() {
+    id = typ = v = ans = 0;
+    ok = false;
+}
+
 Simulator::Simulator() {
     __pc = 600;
     __idseed = 19000;
@@ -147,6 +152,7 @@ int Simulator::get_new_id() {
 
 int Simulator::exec_get(int typ, int v) {
     assert(typ != Inst::__para_type::ROBTAG);
+    assert(typ != Inst::__para_type::NONE);
     switch (typ) {
         case Inst::__para_type::REGISTER:
             return reg.get(v);
@@ -216,7 +222,7 @@ int Simulator::issue() {
             c.id = idx; c.ok = false;
             /*If it is a BREAK, since 'break' has no actions
              * Nobody will update its' rob result status.
-             * So, we mark it as completed in the initial stage*/
+             * we deal with this special case in wb stage*/
             /*if (ist->isbreak()) c.ok = true;*/
             rob.push_back(c);
             linktag(*ist); /*Register renaming*/
@@ -329,7 +335,7 @@ void Simulator::commit(int typ, int v, int tv) {
     } else if (typ == Inst::__para_type::MEMORY) {
         mem->setmem(v, tv);
     } else {
-        buginfo("wrong commit %d %d %d\n", \
+        buginfo("Non-effect commit %d %d %d\n", \
                 typ, v, tv);
         return;
     }
@@ -347,20 +353,28 @@ int Simulator::commit() {
         buginfo("Time: %d, rob is empty()\n", clock());
         return -1;
     }
+
+    /*Check if the head is completed*/
     RobCell c = rob.front();
+    Inst* ist = id2ist[c.id];
     if (c.ok == false) {
-        Inst* ist = id2ist[c.id];
         buginfo("%s rob head not ready!\n", ist->ori_str);
         return 0;
     }
     
-    if (c.id == 19042) 
-        buginfo("Catch u\n");
+    if (ist->isjump()) { /*it's a jump*/
+        /*Hard-code the dst*/
+        int d = ist->getv(0,25) << 2;
+        btb.set(ist->textline(), d);
+    }
+
     /*Free resources*/
     rob.pop_front();
     auto it = find(rs.begin(), rs.end(), c.id);
     rs.erase(it);
     id2ist.erase(c.id); 
+
+    /*free register tag should be done in wb stage*/
     //free_tag(c.typ, c.v);  
 
     /*Write results to real reg & mem*/
@@ -370,22 +384,32 @@ int Simulator::commit() {
 }
 
 /*This is in IF stage*/
-void Simulator::might_jump(int id, int dst) {
+/* jtyp == 0: indirect jump
+ * jtyp == 1: direct jump*/
+void Simulator::might_jump(int id, int jtyp, int dst) {
     Inst& ist = *id2ist[id];
+    dst = (jtyp) ? dst : (pc()+dst); /*dest we requested*/
+    ist.para_val[3] = dst; /*save addr*/
+    
     int z = btb.get(ist.textline());
+
+    /*If it is a jump, always jump*/
+    if (ist.isjump()) z = dst;
+
     if (z == 0) return;
     pc() = z;
 }
 
 /*cancel actions that came after id*/
 void Simulator::cancel_from_robtag(int id) {
+    /*Find id*/
     list<RobCell>::iterator p = rob.begin();
     while(p!=rob.end() && p->id!=id) ++p;
     assert(p!=rob.end());
+
     set<int> sids;
-    while(p!=rob.end()) {
+    for (auto q=p; q!=rob.end(); ++q) {
         sids.insert(p->id);
-        ++p;
     }
     
     rob.erase(p, rob.end());/*erase from rob*/
@@ -403,26 +427,35 @@ void Simulator::cancel_from_robtag(int id) {
     for (int d: tk) reg2id.erase(d);
 }
 
-/*branch ist doesn't have WB-stage
- * But this happened at WB stage*/
-void Simulator::confirm_jump(int id, int dst) {
+/* In confirm_jump, btb will be updated, this
+ * is in exec stage*/
+void Simulator::confirm_jump(int id, bool ok) {
     Inst& ist = *id2ist[id];
-    int pdst = btb.get(ist.textline());
+    int dst = ist.para_val[3];
+    /*If pdst == 0, then last prediction is not-taken*/
+    int pdst = btb.get(ist.textline()); 
+    /* If this is jump, the record was not in btb
+     * yet, thus pdst is always 0*/
+    if (ist.isjump()) { /*keep this*/ 
+        pdst = dst;
+    }
+
     /*Correct prediction*/
-    if ((pdst>0&&dst) || (pdst==0&&!dst)) {
-        for (RobCell c: rob) {
+    if ((ok && pdst!=0) || (!ok && !pdst)) {
+        /*update the rob*/
+        for (RobCell& c: rob) {
             if (c.id == id) {
                 c.ok = true;
                 return;
             }
         }
-    } else if (pdst>0&&!dst) { /*false taken*/
+    } else if (!ok && pdst>0) { /*a false taken*/
         btb.set(ist.textline(), 0); 
         cancel_from_robtag(ist.id());
         /*Reverse pc*/
-        Inst* k = id2ist[rob.back().id];
-        pc() = k->textline() + 4;
-    } else if (pdst==0&&dst) { /*false not-taken*/
+        //Inst* k = id2ist[rob.back().id];
+        pc() = ist.textline() + 4;
+    } else if (ok && pdst==0) { /*a false not-taken*/
         btb.set(ist.textline(), dst);
         cancel_from_robtag(ist.id());
         /*Jump to new pc*/

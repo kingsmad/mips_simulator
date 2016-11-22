@@ -226,7 +226,8 @@ int Disassembler::dis_j(Inst& ist, char* s) {
     ist.exec = [&]() {
         --ist.res_status;
         if (ist.res_status == 1) {
-            ist.hp->might_jump(ist.id(), d);
+            /*0: indirect jump, 1: direct jump*/
+            ist.hp->might_jump(ist.id(), 1, ist.getv(0,25)<<2);
             return;
         }
         ist.hp->confirm_jump(ist.id(), true);
@@ -251,7 +252,7 @@ int Disassembler::dis_beq(Inst& ist, char* s) {
     ist.exec = [&]() {
         --ist.res_status;
         if (ist.res_status == 1) { /* IF stage */
-            ist.hp->might_jump(ist.id(), ist.para_val[2]);
+            ist.hp->might_jump(ist.id(), 0, ist.para_val[2]);
             return;
         }
         int p = ist.hp->exec_get(ist.para_typ[0], ist.para_val[0]);
@@ -281,7 +282,7 @@ int Disassembler::dis_bne(Inst& ist, char* s) {
     ist.exec = [&]() {
         --ist.res_status;
         if (ist.res_status == 1) { /* IF stage */
-            ist.hp->might_jump(ist.id(), ist.para_val[2]);
+            ist.hp->might_jump(ist.id(), 0, ist.para_val[2]);
             return;
         }
         int p = ist.hp->exec_get(ist.para_typ[0], ist.para_val[0]);
@@ -311,7 +312,7 @@ int Disassembler::dis_bgez(Inst& ist, char* s) {
     ist.exec = [&]() {
         --ist.res_status;
         if (ist.res_status == 1) { /*IF stage*/
-            ist.hp->might_jump(ist.id(), ist.para_val[1]);
+            ist.hp->might_jump(ist.id(), 0, ist.para_val[1]);
             return;
         }
         int p = ist.hp->exec_get(ist.para_typ[0], ist.para_val[0]);
@@ -338,7 +339,7 @@ int Disassembler::dis_bgtz(Inst& ist, char* s) {
     ist.exec = [&]() {
         --ist.res_status;
         if (ist.res_status == 1) { /*IF stage*/
-            ist.hp->might_jump(ist.id(), ist.para_val[1]);
+            ist.hp->might_jump(ist.id(), 0, ist.para_val[1]);
             return;
         }
         int p = ist.hp->exec_get(ist.para_typ[0], ist.para_val[0]);
@@ -365,12 +366,12 @@ int Disassembler::dis_blez(Inst& ist, char* s) {
     ist.exec = [&]() {
         --ist.res_status;
         if (ist.res_status == 1) { /*IF stage*/
-            ist.hp->might_jump(ist.id(), ist.para_val[1]);
+            ist.hp->might_jump(ist.id(), 0, ist.para_val[1]);
             return;
         }
         int p = ist.hp->exec_get(ist.para_typ[0], ist.para_val[0]);
         if (p <= 0) ist.hp->confirm_jump(ist.id(), true);
-        else ist.hp->confirm_jump(ist.id(), false);
+        else ist.hp->confirm_jump(ist.id(), false); 
     };
 
     if (!s)
@@ -393,7 +394,7 @@ int Disassembler::dis_bltz(Inst& ist, char* s) {
     ist.exec = [&]() {
         --ist.res_status;
         if (ist.res_status == 1) { /*IF stage*/
-            ist.hp->might_jump(ist.id(), ist.para_val[1]);
+            ist.hp->might_jump(ist.id(), 0, ist.para_val[1]);
             return;
         }
         int p = ist.hp->exec_get(ist.para_typ[0], ist.para_val[0]);
@@ -426,9 +427,8 @@ int Disassembler::dis_addi(Inst& ist, char* s) {
         //buginfo("When exec, Current ist is: %lld\n", &ist);
         //buginfo("When exec, ist has hp: %lld\n", ist.hp);
         --ist.res_status;
-        int p = ist.hp->exec_get(ist.para_typ[0], ist.para_val[0]);
         int q = ist.hp->exec_get(ist.para_typ[1], ist.para_val[1]);
-        p += q + ist.para_val[2];
+        int p = q + ist.para_val[2];
         ist.hp->exec_set(ist.id(), ist.fake_dst_typ, ist.fake_dst_val, p);
     };
 
@@ -574,6 +574,7 @@ int Disassembler::dis_sll_nop(Inst& ist, char* s) {
         ist.res_status = 1;
         ist.exec = [&]() {
             --ist.res_status;
+            ist.hp->exec_set(ist.id(), ist.NONE, 0, 0); 
         };
 
         if (!s)

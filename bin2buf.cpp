@@ -104,6 +104,10 @@ bool Inst::isbreak() {
     return op() == 0 && fc() == 13;
 }
 
+bool Inst::isjump() {
+    return op() == 2;
+}
+
 /* Designed for simulator */
 
 Bin2buf::Bin2buf() {

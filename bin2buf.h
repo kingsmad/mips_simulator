@@ -14,8 +14,8 @@ public:
     virtual int exec_get(int tpy, int v) = 0;
     virtual void exec_break(int id) = 0;
     virtual void linktag(int id) = 0;
-    virtual void might_jump(int id, int dst) = 0;
-    virtual void confirm_jump(int id, int dst) = 0;
+    virtual void might_jump(int id, int jtyp, int dst) = 0;
+    virtual void confirm_jump(int id, bool ok) = 0;
 };
 
 using namespace std;
@@ -57,8 +57,9 @@ public:
         ROBTAG, /*ID*/
         IMMEDIATE
     };
-    int para_typ[3];
-    int para_val[3];
+    /*Only 3 required, but left one for storeages*/
+    int para_typ[4];
+    int para_val[4];
     int dst_typ, dst_val;
     int fake_dst_typ, fake_dst_val;
     char ori_str[30];
@@ -67,6 +68,7 @@ public:
     inline int& id() { return __id;}
     inline int textline() { return __textline;}
     inline void settextline(int x) { __textline = x;}
+    bool isjump();
     bool isbreak(); 
 public:
     function<void()> exec;
