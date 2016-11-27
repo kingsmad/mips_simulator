@@ -421,11 +421,7 @@ int Disassembler::dis_addi(Inst& ist, char* s) {
     ist.dst_typ = ist.REGISTER;
     ist.dst_val = ist.rt(); 
     ist.res_status = 1;
-    //buginfo("When loading, Current ist is: %lld\n", &ist);
-    //buginfo("When loading, ist has hp: %lld\n", ist.hp);
     ist.exec = [&]() {
-        //buginfo("When exec, Current ist is: %lld\n", &ist);
-        //buginfo("When exec, ist has hp: %lld\n", ist.hp);
         --ist.res_status;
         int q = ist.hp->exec_get(ist.para_typ[1], ist.para_val[1]);
         int p = q + ist.para_val[2];

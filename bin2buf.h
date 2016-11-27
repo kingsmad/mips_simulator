@@ -68,8 +68,12 @@ public:
     inline int& id() { return __id;}
     inline int textline() { return __textline;}
     inline void settextline(int x) { __textline = x;}
+public: /*Judgement functions*/
     bool isjump();
     bool isbreak(); 
+    bool isnop();
+    bool issw();
+    bool isready(); /*Ready for exec*/
 public:
     function<void()> exec;
 };

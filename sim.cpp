@@ -11,7 +11,18 @@ extern void buginfo(const char* f, ...);
 
 using namespace std;
 
-int BTB::get(int k) {
+class Transit_Info {
+public:
+    /* In commit stage, how many rs or rob 
+     * were canceled, they can't be used in
+     * current clock()!*/
+    int cloak_rs_cnt = 0;
+    int cloak_rob_cnt = 0;
+    int newpc = 0;
+    int curpc = 0;
+} tinfo;
+
+pair<int, BTB::STATUS> BTB::get(int k, int dst) {
     auto c = M.find(k);
     if (c == M.end()) {
         while (M.size() > maxbtb) {
@@ -21,11 +32,11 @@ int BTB::get(int k) {
         }
         mlist.push_back(k);
         auto it = mlist.end(); --it;
-        M.insert(make_pair(k, make_pair(it, 0)));
+        M.insert(make_pair(k, make_pair(it, make_pair(dst, NOTSET))));
 
-        return 0;
+        return make_pair(dst, NOTSET);
     } else {
-        int v = c->second.second;
+        pair<int, BTB::STATUS> v = c->second.second;
         auto lc = c->second.first;
         int ky = *lc;
         mlist.erase(lc);
@@ -37,11 +48,19 @@ int BTB::get(int k) {
     }
 }
 
-void BTB::set(int k, int v) {
-    int c = get(k);
-    if (c == v) return;
-    M[k].second = v;
+BTB::STATUS BTB::raw_get(int k) {
+    auto c = M.find(k);
+    if (c == M.end()) return BTB::STATUS::NOTSET;
+    return c->second.second.second;
+}
 
+void BTB::set(int k, BTB::STATUS s) {
+    /*we assert we have a get before*/
+    assert(M.count(k) > 0);
+    pair<int, BTB::STATUS> c = get(k, 0);
+
+    if (c.second == s) return;
+    M[k].second.second = s;
     return;
 }
 
@@ -51,10 +70,15 @@ int BTB::print(char* s) {
     int cnt = 1;
     for (auto it: M) {
         int d1 = it.first;
-        int d2 = it.second.second;
-        int d3 = d2 > 0 ? 1 : 0;
-        offset += sprintf(s+offset, "[Entry %d]:<%d,%d,%d>\n", \
-                cnt, d1, d2, d3);
+        int d2 = it.second.second.first;
+        int d3 = it.second.second.second;
+        if (d3 != BTB::STATUS::NOTSET) {
+            d3 = (d3==BTB::STATUS::T) ? 1 : 0;
+            offset += sprintf(s+offset, "[Entry %d]:<%d,%d,%d>\n", \
+                    cnt, d1, d2, d3);
+        } else
+            offset += sprintf(s+offset, "[Entry %d]:<%d,%d,NotSet>\n",
+                    cnt, d1, d2);
         ++cnt;
     }
     return offset;
@@ -71,7 +95,7 @@ int Reg::print(char* s) {
         offset += sprintf(s+offset, "R%02d:", i*8);
         for (int j=0; j<8; ++j) {
             int x = i*8+j;
-            offset += sprintf(s+offset, "    %d",  get(x));
+            offset += sprintf(s+offset, "\t%d",  get(x));
         }
         offset += sprintf(s+offset, "\n");
     }
@@ -102,6 +126,7 @@ bool WBCell::operator < (const WBCell& rhs) const {
 RobCell::RobCell() {
     id = typ = v = ans = 0;
     ok = false;
+    need_flush = false;
 }
 
 Simulator::Simulator() {
@@ -116,12 +141,15 @@ void Simulator::linktag(int id) {
 }
 
 void Simulator::linktag(Inst& ist) {
+    /*update: memory no longer need re-mapping*/
+
     /*We assume mem addrs will > 32, thus no
      * overlapping would happend*/
     /*Dependencies*/
+
     for (int i=0; i<3; ++i) {
-        if (ist.para_typ[i] == ist.REGISTER || \
-                ist.para_typ[i] == ist.MEMORY) {
+        if (ist.para_typ[i] == ist.REGISTER/* || \
+                ist.para_typ[i] == ist.MEMORY*/) {
             int p = ist.para_val[i];
             if (reg2id.count(p) > 0) { /*dependency*/
                 int x = reg2id[p];
@@ -137,11 +165,15 @@ void Simulator::linktag(Inst& ist) {
     }
     
     /*output targets, Results*/
-    if (ist.dst_typ == ist.MEMORY || ist.dst_typ == \
+    if (/*ist.dst_typ == ist.MEMORY || */ist.dst_typ == \
             ist.REGISTER) {
         reg2id[ist.dst_val] = ist.id();
         ist.fake_dst_typ = ist.ROBTAG;
         ist.fake_dst_val = ist.id();
+    } else { 
+        /*No renaming happened*/
+        ist.fake_dst_typ = ist.dst_typ;
+        ist.fake_dst_val = ist.dst_val;
     }
 }
 
@@ -211,8 +243,19 @@ int Simulator::issue() {
         assert(id2ist.count(id) > 0);
         Inst* ist = id2ist[id];
 
-        /*If rs and rob both has seats*/
-        if (rs.size() < maxrob && rob.size() < maxrob) {
+        /*Break && Nop don't use RS station*/
+        if (ist->isbreak() || ist->isnop()) {
+            if (rob.size() + tinfo.cloak_rob_cnt < maxrob) {
+                v.push_back(id);
+                RobCell c;
+                c.id = ist->id(); 
+                c.ok = true; /*Onece issued, it can be committed*/
+                rob.push_back(c);
+                linktag(*ist);
+            }
+        } else if (rs.size() + tinfo.cloak_rs_cnt <maxrs && \
+                rob.size() + tinfo.cloak_rob_cnt < maxrob) {
+            /*Both rs and rob has seats*/
             v.push_back(id);
             int idx = ist->id();
             rs.push_back(idx);
@@ -229,6 +272,7 @@ int Simulator::issue() {
         }
     }
 
+    /*Remove used ist*/
     for (int id: v) {
         auto it = find(iq.begin(), iq.end(), id);
         iq.erase(it);
@@ -250,19 +294,71 @@ int Simulator::exec() {
         Inst* ist = id2ist[x];
         if (ist->res_status == 0) continue;
         assert(ist->res_status > 0);
-        bool ok = true;
+        
+        /*it is ready*/
+        if (ist->isready())
+            S.insert(ist);
+    }
+
+    /* Find the first mem-related ist that haven't 
+     * calc address yet*/
+    int mid = 0;
+    for (RobCell& c: rob) {
+        bool ok = false;
+        Inst* t = id2ist[c.id];
         for (int i=0; i<3; ++i) {
-            if (ist->para_typ[i] == ist->ROBTAG) {
-                ok = false;
+            if (t->para_typ[i] == t->MEMORY || \
+                    t->dst_typ == t->MEMORY) {
+                ok = true;
                 break;
             }
         }
-        /*it is ready*/
-        if (ok)
-            S.insert(ist);
+        if (ok) {
+            mid = c.id;
+            break;
+        }
     }
+    
    
     for (Inst* p: S) {
+        /*Special case for lw && sw*/
+        /*Check if p is a lw || sw*/
+        bool ok = false;
+        for (int i=0; i<3; ++i) {
+            if (p->para_typ[i] == p->MEMORY || \
+                    p->dst_typ == p->MEMORY) {
+                ok = true;
+                break;
+            }
+        }
+
+        if (ok && p->id()!=mid) {
+            switch (p->res_status) {
+                case 2: /*non-first && addres unkown*/
+                    continue; /*skip it*/
+                case 1:
+                    assert(p->dst_typ!=p->MEMORY_CHAO);
+                    if (p->dst_typ != p->MEMORY) {
+                        /* Means this is not a SW.
+                         * Then must be a load*/
+                        /* Check if there is any store before
+                         * it and not commit yet*/ 
+                        bool a = false;
+                        for (auto it=rob.begin(); \
+                                it->id!=p->id(); ++it) {
+                            Inst* t = id2ist[it->id];
+                            if (t->dst_typ == t->MEMORY) {
+                                a = true; break;
+                            }
+                        }
+                        if (a) continue;
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+
         if (p->res_status > 0) 
             p->exec(); 
     }
@@ -349,29 +445,48 @@ void Simulator::free_tag(int typ, int v) {
 }
 
 int Simulator::commit() {
+    /*Restor the tinfo*/
+    tinfo.cloak_rs_cnt = 0;
+    tinfo.cloak_rob_cnt = 0;
+
     if (rob.empty()) { 
         buginfo("Time: %d, rob is empty()\n", clock());
         return -1;
     }
 
-    /*Check if the head is completed*/
     RobCell c = rob.front();
     Inst* ist = id2ist[c.id];
-    if (c.ok == false) {
-        buginfo("%s rob head not ready!\n", ist->ori_str);
-        return 0;
-    }
     
+    /*Special cases*/
     if (ist->isjump()) { /*it's a jump*/
         /*Hard-code the dst*/
-        int d = ist->getv(0,25) << 2;
-        btb.set(ist->textline(), d);
+        //int d = ist->getv(0,25) << 2;
+        btb.set(ist->textline(), BTB::STATUS::T);
+    }
+    /*if (ist->isnop() || ist->isbreak()) {
+        c.ok = true; 
+    }*/
+
+    /*Check if the head is completed*/
+    if (c.ok == false) {
+        buginfo("Clock %d ,%s rob head not ready!\n", clock(), ist->ori_str);
+        return 0;
+    }
+
+    /* When reach here, The head is ready to commit*/
+    /* First check if this is a ist waiting for flush*/
+    if (c.need_flush == true) {
+        flush_from(c.id);
+        return 0;
     }
 
     /*Free resources*/
-    rob.pop_front();
+    rob.pop_front(); ++tinfo.cloak_rob_cnt;
     auto it = find(rs.begin(), rs.end(), c.id);
-    rs.erase(it);
+    if (it != rs.end()) { /*nop && break doesn't have rs seat*/
+        rs.erase(it);
+        ++tinfo.cloak_rs_cnt;
+    }
     id2ist.erase(c.id); 
 
     /*free register tag should be done in wb stage*/
@@ -387,21 +502,42 @@ int Simulator::commit() {
 /* jtyp == 0: indirect jump
  * jtyp == 1: direct jump*/
 void Simulator::might_jump(int id, int jtyp, int dst) {
+    /* Calc and save destination*/
     Inst& ist = *id2ist[id];
     dst = (jtyp) ? dst : (pc()+dst); /*dest we requested*/
     ist.para_val[3] = dst; /*save addr*/
     
-    int z = btb.get(ist.textline());
+    bool jump = false;
+    pair<int, BTB::STATUS> z = btb.get(ist.textline(), dst);
+    if (z.second == BTB::STATUS::NOTSET) {
+        /*If it is a jump, always jump*/
+        if (ist.isjump()) jump = true;
+        else jump = false;
+    } else if (z.second == BTB::STATUS::NT) {
+        jump = false;
+    } else {
+        jump = true;
+    }
 
-    /*If it is a jump, always jump*/
-    if (ist.isjump()) z = dst;
-
-    if (z == 0) return;
-    pc() = z;
+    if (jump) { 
+        pc() = dst;
+    }
 }
 
-/*cancel actions that came after id*/
-void Simulator::cancel_from_robtag(int id) {
+/*Mark this ist, it will be canceld in commit stage*/
+void Simulator::will_flush_from(int id, int newpc) {
+    /*Find RobCell from id*/ 
+    list<RobCell>::iterator p = rob.begin();
+    while(p!=rob.end() && p->id!=id) ++p;
+    assert(p!=rob.end());
+    
+    p->need_flush = true;
+    p->ok = true;
+    tinfo.newpc = newpc;
+}
+
+/*cancel all actions that came after id*/
+void Simulator::flush_from(int id) {
     /*Find id*/
     list<RobCell>::iterator p = rob.begin();
     while(p!=rob.end() && p->id!=id) ++p;
@@ -409,14 +545,16 @@ void Simulator::cancel_from_robtag(int id) {
 
     set<int> sids;
     for (auto q=p; q!=rob.end(); ++q) {
-        sids.insert(p->id);
+        sids.insert(q->id);
     }
     
     rob.erase(p, rob.end());/*erase from rob*/
+
     for (auto c:sids) { /*erase from rs*/
         auto it = find(rs.begin(), rs.end(), c);
-        rs.erase(it);
+        rs.erase(it); ++tinfo.cloak_rs_cnt;
     }
+
     /*Erase from reg2id*/
     vector<int> tk;
     for (auto c: reg2id) {
@@ -425,23 +563,35 @@ void Simulator::cancel_from_robtag(int id) {
         }
     }
     for (int d: tk) reg2id.erase(d);
+
+    /* Erase all iq, because they must came after 
+     * current ist we want to flush*/
+    iq.clear();
+
+    /*update pc*/
+    pc() = tinfo.newpc; 
 }
 
 /* In confirm_jump, btb will be updated, this
  * is in exec stage*/
 void Simulator::confirm_jump(int id, bool ok) {
+    /* Retrieve jump address from ist*/
     Inst& ist = *id2ist[id];
     int dst = ist.para_val[3];
-    /*If pdst == 0, then last prediction is not-taken*/
-    int pdst = btb.get(ist.textline()); 
+
+    BTB::STATUS pre_res = btb.raw_get(id);
     /* If this is jump, the record was not in btb
      * yet, thus pdst is always 0*/
     if (ist.isjump()) { /*keep this*/ 
-        pdst = dst;
+        pre_res = BTB::STATUS::T;
     }
+    if (pre_res == BTB::STATUS::NOTSET) {
+        pre_res = BTB::STATUS::NT;
+    }
+    bool pres = (pre_res == BTB::STATUS::T) ? true : false;
 
     /*Correct prediction*/
-    if ((ok && pdst!=0) || (!ok && !pdst)) {
+    if (ok == pres) {
         /*update the rob*/
         for (RobCell& c: rob) {
             if (c.id == id) {
@@ -449,17 +599,12 @@ void Simulator::confirm_jump(int id, bool ok) {
                 return;
             }
         }
-    } else if (!ok && pdst>0) { /*a false taken*/
-        btb.set(ist.textline(), 0); 
-        cancel_from_robtag(ist.id());
-        /*Reverse pc*/
-        //Inst* k = id2ist[rob.back().id];
-        pc() = ist.textline() + 4;
-    } else if (ok && pdst==0) { /*a false not-taken*/
-        btb.set(ist.textline(), dst);
-        cancel_from_robtag(ist.id());
-        /*Jump to new pc*/
-        pc() = dst;
+    } else if (pres && !ok) { /*a false taken*/
+        btb.set(ist.textline(), BTB::STATUS::NT); 
+        will_flush_from(ist.id(), ist.textline()+4); 
+    } else if (!pres && ok) { /*a false not-taken*/
+        btb.set(ist.textline(), BTB::STATUS::T);
+        will_flush_from(ist.id(), dst);
     }
 }
 
@@ -511,11 +656,15 @@ int Simulator::holyprint(char* s, int clock) {
 }
 
 void Simulator::run() {
-    clock() = 0;
+    clock() = 1;
     offset = 0;
     while(1) {
         buginfo("Running circle: %d, PC: %d...\n", clock(), pc());
         int res[5]; memset(res, 0, sizeof(res));
+        tinfo.curpc = pc(); /*store current cycle pc*/
+        if (clock() == 38) {
+            printf("Hi");
+        }
         res[0] = commit();
         res[1] = wb();
         res[2] = exec();

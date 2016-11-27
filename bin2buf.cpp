@@ -108,6 +108,35 @@ bool Inst::isjump() {
     return op() == 2;
 }
 
+bool Inst::isnop() {
+    return d() == 0;
+}
+
+/* If this is a sw, dependance of two steps
+ * are independent.
+ * Otherwise, if any of the para is ROBTAG,
+ * this is not ready*/
+bool Inst::isready() {
+    if (issw()) {
+        if (res_status == 2) {
+            return para_typ[2] != this->ROBTAG;
+        } else {
+            return para_typ[0] != this->ROBTAG;
+        }
+    }
+
+    for (int i=0; i<3; ++i) {
+        if (para_typ[i] == this->ROBTAG)
+            return false;
+    }
+
+    return true;
+}
+
+bool Inst::issw() {
+    return op() == 43;
+}
+
 /* Designed for simulator */
 
 Bin2buf::Bin2buf() {
@@ -218,8 +247,8 @@ void Bin2buf::readall_inst() {
     data_end = pc;
 }
 
-void Bin2buf::setmem(int x, int v) {
-    pc2mem[x] = v;
+void Bin2buf::setmem(int x, int p) {
+    pc2mem[x] = p;
 }
 
 int Bin2buf::getmem(int x) {
@@ -249,13 +278,14 @@ int Bin2buf::write_buf(const char* s, int sz) {
 int Bin2buf::mmprint(char* s) {
     int offset = 0;
     offset += sprintf(s+offset, "Data Segment:\n");
-    for (int i=data_seg; i<data_end; i+=32) {
-        offset += sprintf(s+offset, "R%02d:", i);
-        for (int j=i; j<i+32&&j<data_end; j+=4) {
-            offset += sprintf(s+offset, "    %d", getmem(j)); 
-        }
-        offset += sprintf(s+offset, "\n");
+    
+
+    /*The data_start point is 716 as professor assigned*/
+    offset += sprintf(s+offset, "716:");
+    for (int i=716; i<data_end; i+=4) {
+        offset += sprintf(s+offset, "\t%d", getmem(i)); 
     }
+    offset += sprintf(s+offset, "\n");
 
     return offset;
 }

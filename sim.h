@@ -15,11 +15,20 @@ const int maxbtb = 16;
 
 /*Defect in dealing with addrs*/
 class BTB {
-    unordered_map<int, pair<list<int>::iterator, int> > M;
+public:
+    enum STATUS {
+        NOTSET,
+        NT,
+        T
+    };
+private:
+    unordered_map<int, pair<list<int>::iterator, pair<int, BTB::STATUS> > > M;
     list<int> mlist;
 public:
-    int get(int k); 
-    void set(int k, int v);
+    
+    pair<int, BTB::STATUS> get(int k, int dst); 
+    BTB::STATUS raw_get(int k);
+    void set(int k, BTB::STATUS s);
     void get_last_src();
     void get_last_dst();
     int print(char* s);
@@ -36,7 +45,7 @@ public:
 
 struct RobCell {
     int id, typ, v, ans;
-    bool ok;
+    bool ok, need_flush;
     RobCell();
 };
 
@@ -65,7 +74,8 @@ class Simulator : public InstExecHelper {
 private:
     void commit(int typ, int v, int tv);
     void free_tag(int typ, int v);
-    void cancel_from_robtag(int id);
+    void flush_from(int id);
+    void will_flush_from(int id, int newpc);
 public:
     Simulator();
     inline void setMM(MM* m) { mem = m;}
