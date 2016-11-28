@@ -242,6 +242,14 @@ void Simulator::exec_set(int id, int typ,\
             c.v = ist->dst_val;
             c.ans = tv;
             c.ok = true;
+            /* This is a corner case: if in previous cycle, 
+             * every opt in this SW is ready. Then it should
+             * be moved to commit stage. However, commit stage
+             * itself does not know it.*/
+            /* tinfo.cloak_rob_cnt == 0 ensures in current clock,
+             * there is no double commit*/
+            if (c.id == rob.front().id && tinfo.cloak_rob_cnt==0) 
+                commit();
             break;
         }
         return;
@@ -746,9 +754,6 @@ void Simulator::run() {
         buginfo("Running circle: %d, PC: %d...\n", clock(), pc());
         int res[5]; memset(res, 0, sizeof(res));
         tinfo.curpc = pc(); /*store current cycle pc*/
-        if (clock() == 9) {
-            printf("Coming...\n");
-        }
         res[0] = commit();
         res[2] = exec();
         res[3] = issue();
@@ -761,8 +766,16 @@ void Simulator::run() {
         if (res[3] != -1) buginfo("issue non-empty\n");
         if (res[4] != -1) buginfo("fetch non-empty\n");
 
-        offset += holyprint(__strout+offset, clock());
+        if (clock() >= trace_st && clock() <= trace_ed)
+            offset += holyprint(__strout+offset, clock());
+
+        if (res[0]==-1 && res[1]==-1 && res[2]==-1 && res[3]==-1 && res[4]==-1) {
+            if (trace_st == 0 && trace_ed == 0) {
+                offset += holyprint(__strout+offset, clock());
+            }
+            break;
+        }
         clock() = clock() + 1;
-        if (res[0]==-1 && res[1]==-1 && res[2]==-1 && res[3]==-1 && res[4]==-1) break;
     }
+
 }

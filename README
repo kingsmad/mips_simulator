@@ -1,0 +1,26 @@
+/*In god We Trust*/ 
+
+username: Juechen Liu
+UFID: 9089-8935
+E-mail: grinchjcl@ufl.edu
+
+On my honor, I have neither given nor received unauthorized aid on this assignment
+
+Current Usage:
+./MIPSsim inputfilename outputfilename -Tn:m
+
+For example, ./MIPSsim fibonacci_bin.bin sim_output.txt
+
+About -Tn:m option:
+    n and m stands for the cycles started from n to m in trace.
+    However, if n == 0 && m == 0, only the last cycle will be printed.
+
+Notes:
+1: The codes were tested under CISE thunder server and passed for Thursday's sample
+   version (Latest by now - Nov.28)
+2: I noticed that in the sample, TA used windows machine which produced <CR> instead of 
+   <LF>. However, my trace used <LF> which might cause diff command to fail on every   
+   line. In this case, I will be greatly appreciated if TA could use vimdiff to compare
+   the traces.
+3: As mentioned in clarification, I omitted sim/dis option.
+

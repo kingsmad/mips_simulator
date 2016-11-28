@@ -4,6 +4,7 @@
 #include "disassembler.h"
 #include <list>
 #include <map>
+#include <climits>
 #include <cstdarg>
 #include <unordered_map>
 #include <set>
@@ -13,7 +14,7 @@ const int maxrob = 6;
 const int maxbtb = 16;
 
 
-/*Defect in dealing with addrs*/
+/* bug in dealing with addrs*/
 class BTB {
 public:
     enum STATUS {
@@ -28,7 +29,6 @@ private:
     int seq = 1979;
 
 public:
-    
     pair<int, BTB::STATUS> get(int k, int dst); 
     pair<int, BTB::STATUS> raw_get(int k);
     void set(int k, BTB::STATUS s, int dst);
@@ -74,6 +74,7 @@ class Simulator : public InstExecHelper {
     list<RobCell> rob;
     map<int, int> reg2id; /*reg is used by which id*/
     set<WBCell> wbs; 
+    int trace_st = 0, trace_ed = INT_MAX;
 private:
     void commit(int typ, int v, int tv);
     void free_tag(int typ, int v);
@@ -86,6 +87,9 @@ public:
     inline void setMM(MM* m) { mem = m;}
     inline void set_strout(char* s) { __strout = s;}
     inline void setibuf(Ibuf* b) { ibuf=b;}
+    inline void set_trace_range(int d1, int d2) {
+        trace_st = d1, trace_ed = d2;
+    }
     inline int& pc() { return __pc;}
     int get_new_id(); /*get an global uniq id*/
     int issue();

@@ -1,12 +1,13 @@
 /*************************************************************************
     > File Name: main.cpp
 ************************************************************************/
-const bool debug = true;
+const bool debug = false;
 #include <cstdio>
 #include <iostream>
 #include <cmath>
 #include <stack>
 #include <queue>
+#include <climits>
 #include <climits>
 #include <string>
 #include <vector>
@@ -53,17 +54,23 @@ int main(int argc, char** argv) {
     }
     while(!idone || !odone) {
         if (!idone) {
-            /*printf("\nPlease enter input filename:"); 
-            scanf("%s", inf);*/
-            sprintf(inf, "%s", "fibonacci_bin.bin");
+            printf("\nPlease enter input filename:"); 
+            scanf("%s", inf);
+            //sprintf(inf, "%s", "fibonacci_bin.bin");
             idone = (bin2buf.open_in_file(inf) != -1);
         }
         if (!odone) {
-            /*printf("\nPlease enter output filename:");
-            scanf("%s", otf);*/
-            sprintf(otf, "%s", "hi.txt");
+            printf("\nPlease enter output filename:");
+            scanf("%s", otf);
+            //sprintf(otf, "%s", "hi.txt");
             odone = (bin2buf.open_out_file(otf) != -1);
         }
+    }
+
+    /* Trace range*/
+    int trace_st = 0, trace_ed = INT_MAX;
+    if (argv[3]) {
+        sscanf(argv[3], "-T%d:%d", &trace_st, &trace_ed);
     }
     
     if (!kssim) {
@@ -81,6 +88,7 @@ int main(int argc, char** argv) {
     }
 
     Simulator sim;
+    sim.set_trace_range(trace_st, trace_ed);
     sim.setMM(dynamic_cast<MM*>(&bin2buf));
     sim.setibuf(dynamic_cast<Ibuf*>(&bin2buf));
     bin2buf.readall_inst();

@@ -301,7 +301,7 @@ int Disassembler::dis_bne(Inst& ist, char* s) {
 }
 
 
-// 000001
+// op: 000001 with rt() == 00001
 int Disassembler::dis_bgez(Inst& ist, char* s) {
     ist.para_typ[0] = ist.REGISTER;
     ist.para_val[0] = ist.rs();
@@ -426,9 +426,6 @@ int Disassembler::dis_addi(Inst& ist, char* s) {
         --ist.res_status;
         int q = ist.hp->exec_get(ist.para_typ[1], ist.para_val[1]);
         int p = q + ist.para_val[2];
-        if (p == -4) {
-            buginfo("FUCKER, I am here\n");
-        }
         ist.hp->exec_set(ist.id(), ist.fake_dst_typ, ist.fake_dst_val, p);
     };
 
@@ -453,9 +450,8 @@ int Disassembler::dis_addiu(Inst& ist, char* s) {
     ist.res_status = 1;
     ist.exec = [&]() {
         --ist.res_status;
-        uint32_t p = ist.hp->exec_get(ist.para_typ[0], ist.para_val[0]);
         uint32_t q = ist.hp->exec_get(ist.para_typ[1], ist.para_val[1]);
-        p += q + ist.para_val[2];
+        uint32_t p = q + ist.para_val[2];
         ist.hp->exec_set(ist.id(), ist.fake_dst_typ, ist.fake_dst_val, p);
     };
 
@@ -561,7 +557,7 @@ int Disassembler::dis_sltu(Inst& ist, char* s) {
     };
 
     if (!s)
-        return sprintf(ist.ori_str, "SLT R%d, R%d, R%d", ist.rd(), \
+        return sprintf(ist.ori_str, "SLTU R%d, R%d, R%d", ist.rd(), \
                 ist.rs(), ist.rt());
     return sprintf(s, "SLTU R%d, R%d, R%d", ist.rd(), \
             ist.rs(), ist.rt());
@@ -599,7 +595,7 @@ int Disassembler::dis_sll_nop(Inst& ist, char* s) {
     };
 
     if (!s)
-        return sprintf(&ist.ori_str[0], "SLL R%d, R%d, #%d", ist.rd(), \
+        return sprintf(ist.ori_str, "SLL R%d, R%d, #%d", ist.rd(), \
             ist.rt(), ist.sa());
 
     return sprintf(s, "SLL R%d, R%d, #%d", ist.rd(), \
@@ -841,14 +837,14 @@ int Disassembler::dis_nor(Inst& ist, char* s) {
     ist.para_val[0] = ist.rd();
     ist.para_val[1] = ist.rs();
     ist.para_val[2] = ist.rt();
+    ist.res_status = 1;
     ist.dst_typ = ist.REGISTER;
     ist.dst_val = ist.rd();
-    ist.res_status = 1;
     ist.exec = [&]() {
         --ist.res_status;
         int p = ist.hp->exec_get(ist.para_typ[1], ist.para_val[1]);
         int q = ist.hp->exec_get(ist.para_typ[2], ist.para_val[2]);
-        int ans = (!p && !q) ? 1 : 0;
+        int ans = ((~p) & (~q));
         ist.hp->exec_set(ist.id(), ist.fake_dst_typ, ist.fake_dst_val, ans);
     };
 
