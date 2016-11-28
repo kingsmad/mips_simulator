@@ -24,11 +24,14 @@ public:
 private:
     unordered_map<int, pair<list<int>::iterator, pair<int, BTB::STATUS> > > M;
     list<int> mlist;
+    map<int, int> mseq;
+    int seq = 1979;
+
 public:
     
     pair<int, BTB::STATUS> get(int k, int dst); 
-    BTB::STATUS raw_get(int k);
-    void set(int k, BTB::STATUS s);
+    pair<int, BTB::STATUS> raw_get(int k);
+    void set(int k, BTB::STATUS s, int dst);
     void get_last_src();
     void get_last_dst();
     int print(char* s);
@@ -58,7 +61,7 @@ struct WBCell {
 class Simulator : public InstExecHelper {
     int __pc, __idseed, __clock;
     char* __strout; int offset = 0;
-    bool active = true; /*if met break, active is false*/
+    int active = 1; /*if met break, active is false*/
     list<int> iq;
     BTB btb;
     Reg reg;
@@ -77,6 +80,7 @@ private:
     void flush_from(int id);
     void will_flush_from(int id, int newpc);
     void write_res_back(WBCell w);
+    RobCell* get_rob_by_id(int id);
 public:
     Simulator();
     inline void setMM(MM* m) { mem = m;}

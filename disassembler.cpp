@@ -426,6 +426,9 @@ int Disassembler::dis_addi(Inst& ist, char* s) {
         --ist.res_status;
         int q = ist.hp->exec_get(ist.para_typ[1], ist.para_val[1]);
         int p = q + ist.para_val[2];
+        if (p == -4) {
+            buginfo("FUCKER, I am here\n");
+        }
         ist.hp->exec_set(ist.id(), ist.fake_dst_typ, ist.fake_dst_val, p);
     };
 

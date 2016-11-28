@@ -20,15 +20,23 @@ public:
     int cloak_rob_cnt = 0;
     int newpc = 0;
     int curpc = 0;
+    int just_flushed = 0;
 } tinfo;
 
 pair<int, BTB::STATUS> BTB::get(int k, int dst) {
+    /* Fix sequence in btb*/
+    if (mseq.count(k) == 0) {
+        mseq.insert(make_pair(k, seq++));
+    }
+
     auto c = M.find(k);
     if (c == M.end()) {
+        /* In case buffer is full*/
         while (M.size() > maxbtb) {
             int ky = mlist.front();
             mlist.erase(mlist.begin());
             M.erase(ky);
+            mseq.erase(ky);
         }
         mlist.push_back(k);
         auto it = mlist.end(); --it;
@@ -48,19 +56,20 @@ pair<int, BTB::STATUS> BTB::get(int k, int dst) {
     }
 }
 
-BTB::STATUS BTB::raw_get(int k) {
+pair<int, BTB::STATUS> BTB::raw_get(int k) {
     auto c = M.find(k);
-    if (c == M.end()) return BTB::STATUS::NOTSET;
-    return c->second.second.second;
+    if (c == M.end()) 
+        return make_pair(0, BTB::STATUS::NOTSET);
+    return c->second.second;
 }
 
-void BTB::set(int k, BTB::STATUS s) {
-    /*we assert we have a get before*/
-    assert(M.count(k) > 0);
-    pair<int, BTB::STATUS> c = get(k, 0);
+void BTB::set(int k, BTB::STATUS s, int dst) {
+    /* Run a get, trigger LRU*/
+    pair<int, BTB::STATUS> c = get(k, dst);
 
     if (c.second == s) return;
     M[k].second.second = s;
+    M[k].second.first = dst;
     return;
 }
 
@@ -68,19 +77,28 @@ int BTB::print(char* s) {
     int offset = 0;
     offset += sprintf(s+offset, "BTB:\n");  
     int cnt = 1;
-    for (auto it: M) {
-        int d1 = it.first;
-        int d2 = it.second.second.first;
-        int d3 = it.second.second.second;
-        if (d3 != BTB::STATUS::NOTSET) {
-            d3 = (d3==BTB::STATUS::T) ? 1 : 0;
-            offset += sprintf(s+offset, "[Entry %d]:<%d,%d,%d>\n", \
-                    cnt, d1, d2, d3);
-        } else
-            offset += sprintf(s+offset, "[Entry %d]:<%d,%d,NotSet>\n",
-                    cnt, d1, d2);
+
+    /* Get keys in clock order*/
+    vector<int> keys;
+    for (int d1: mlist) {
+        keys.push_back(d1);
+    }
+
+    sort(keys.begin(), keys.end(), [&](int k1, int k2) {
+        return mseq[k1] < mseq[k2];
+    });
+
+    for (int d1: keys) {
+        int d2 = M[d1].second.first;
+        int d3 = M[d1].second.second;
+        d3 = (d3==BTB::STATUS::T) ? 1 : 0;
+        offset += sprintf(s+offset, \
+                "[Entry %d]<%d,%d,%d>\n", \
+                cnt, d1, d2, d3);
         ++cnt;
     }
+    
+    
     return offset;
 }
 
@@ -140,6 +158,13 @@ void Simulator::linktag(int id) {
     linktag(ist);
 }
 
+RobCell* Simulator::get_rob_by_id(int id) {
+    for (auto& it: rob) {
+        if (it.id == id) return &it;
+    }
+    return 0;
+}
+
 void Simulator::linktag(Inst& ist) {
     /*update: memory no longer need re-mapping*/
 
@@ -153,8 +178,15 @@ void Simulator::linktag(Inst& ist) {
             int p = ist.para_val[i];
             if (reg2id.count(p) > 0) { /*dependency*/
                 int x = reg2id[p];
-                ist.para_typ[i] = ist.ROBTAG;
-                ist.para_val[i] = x;
+                RobCell* c = get_rob_by_id(x);
+                assert(c!=0);
+                if (c->ok) {
+                    ist.para_typ[i] = ist.IMMEDIATE;
+                    ist.para_val[i] = c->ans;
+                } else {
+                    ist.para_typ[i] = ist.ROBTAG;
+                    ist.para_val[i] = x;
+                }
             } else if (ist.para_typ[i] == ist.REGISTER) { 
                 /* No previous dependency, read from 
                  * register file */
@@ -233,11 +265,16 @@ void Simulator::exec_break(int id) {
 /* Accoding to current pc, fetch ist from ibuffer
  * put ist into id2ist, and save its' id*/
 int Simulator::fetch() {
-    if (!active) {
-        buginfo("No longer active now!\n");
+    if (tinfo.just_flushed) {
+        tinfo.just_flushed = 0;
         return -1;
     }
 
+    if (!active) {
+        buginfo("No longer active now!\n");
+        return -1;
+    } 
+    
     /*Save ist into iq && make up for initialization*/
     Inst* ist = ibuf->get_pc2ist(pc()); 
     ist->id() = get_new_id();
@@ -245,8 +282,8 @@ int Simulator::fetch() {
     ist->hp = dynamic_cast<InstExecHelper*>(this);
     id2ist[ist->id()] = ist;
 
-    if (ist->isbreak()) active = false;
-    disa.proc(*ist, 0, pc());
+    if (ist->isbreak()) active = 0;
+    disa.proc_inst(*ist, 0, pc());
     if (ist->isbranch) /*If branch, exec 1st stage*/
         ist->exec();
 
@@ -272,6 +309,7 @@ int Simulator::issue() {
                 c.ok = true; /*Onece issued, it can be committed*/
                 rob.push_back(c);
                 linktag(*ist);
+                /* Mark for directly commit*/ 
             }
         } else if (rs.size() + tinfo.cloak_rs_cnt <maxrs && \
                 rob.size() + tinfo.cloak_rob_cnt < maxrob) {
@@ -320,65 +358,7 @@ int Simulator::exec() {
             S.insert(ist);
     }
 
-    /* Find the first mem-related ist that haven't 
-     * calc address yet*/
-    int mid = 0;
-    for (RobCell& c: rob) {
-        bool ok = false;
-        Inst* t = id2ist[c.id];
-        for (int i=0; i<3; ++i) {
-            if (t->para_typ[i] == t->MEMORY || \
-                    t->dst_typ == t->MEMORY) {
-                ok = true;
-                break;
-            }
-        }
-        if (ok) {
-            mid = c.id;
-            break;
-        }
-    }
-    
-   
     for (Inst* p: S) {
-        /*Special case for lw && sw*/
-        /*Check if p is a lw || sw*/
-        bool ok = false;
-        for (int i=0; i<3; ++i) {
-            if (p->para_typ[i] == p->MEMORY || \
-                    p->dst_typ == p->MEMORY) {
-                ok = true;
-                break;
-            }
-        }
-
-        if (ok && p->id()!=mid) {
-            switch (p->res_status) {
-                case 2: /*non-first && addres unkown*/
-                    continue; /*skip it*/
-                case 1:
-                    assert(p->dst_typ!=p->MEMORY_CHAO);
-                    if (p->dst_typ != p->MEMORY) {
-                        /* Means this is not a SW.
-                         * Then must be a load*/
-                        /* Check if there is any store before
-                         * it and not commit yet*/ 
-                        bool a = false;
-                        for (auto it=rob.begin(); \
-                                it->id!=p->id(); ++it) {
-                            Inst* t = id2ist[it->id];
-                            if (t->dst_typ == t->MEMORY) {
-                                a = true; break;
-                            }
-                        }
-                        if (a) continue;
-                    }
-                    break;
-                default:
-                    break;
-            }
-        }
-
         if (p->res_status > 0) 
             p->exec(); 
     }
@@ -413,13 +393,13 @@ void Simulator::write_res_back(WBCell w) {
         }
     }
 
-    /*Naive o(n), free registers*/
+    /*Naive o(n), free registers
     for (auto it=reg2id.begin(); it!=reg2id.end(); ++it) {
         if (it->second == w.id) {
             reg2id.erase(it);
             break;
         }
-    }
+    }*/
 }
 
 int Simulator::wb() {
@@ -524,6 +504,10 @@ int Simulator::commit() {
     tinfo.cloak_rs_cnt = 0;
     tinfo.cloak_rob_cnt = 0;
 
+    if (clock() == 51) {
+        buginfo("Hi");
+    }
+
     if (rob.empty()) { 
         buginfo("Time: %d, rob is empty()\n", clock());
         return -1;
@@ -536,11 +520,10 @@ int Simulator::commit() {
     if (ist->isjump()) { /*it's a jump*/
         /*Hard-code the dst*/
         //int d = ist->getv(0,25) << 2;
-        btb.set(ist->textline(), BTB::STATUS::T);
+        int dst = ist->para_val[3];
+        assert(dst >= 600);
+        btb.set(ist->textline(), BTB::STATUS::T, dst);
     }
-    /*if (ist->isnop() || ist->isbreak()) {
-        c.ok = true; 
-    }*/
 
     /*Check if the head is completed*/
     if (c.ok == false) {
@@ -569,6 +552,21 @@ int Simulator::commit() {
 
     /*Write results to real reg & mem*/
     commit(c.typ, c.v, c.ans);  
+
+    /* Release reg-tags*/
+    for (auto it=reg2id.begin(); it!=reg2id.end(); ++it) {
+        if (it->second == c.id) {
+            reg2id.erase(it);
+            break;
+        }
+    }
+
+    /* If we just committed a break, the whole system should
+     * shut down now, so we return -1*/
+    if (ist->isbreak()) {
+        return -1;
+    }
+
     buginfo("Time: %d, rob is non-empty\n", clock());
     return 0;
 }
@@ -583,11 +581,11 @@ void Simulator::might_jump(int id, int jtyp, int dst) {
     ist.para_val[3] = dst; /*save addr*/
     
     bool jump = false;
-    pair<int, BTB::STATUS> z = btb.get(ist.textline(), dst);
+    pair<int, BTB::STATUS> z = btb.raw_get(ist.textline());
     if (z.second == BTB::STATUS::NOTSET) {
         /*If it is a jump, always jump*/
-        if (ist.isjump()) jump = true;
-        else jump = false;
+        //if (ist.isjump()) jump = true;
+        jump = false;
     } else if (z.second == BTB::STATUS::NT) {
         jump = false;
     } else {
@@ -621,13 +619,20 @@ void Simulator::flush_from(int id) {
     set<int> sids;
     for (auto q=p; q!=rob.end(); ++q) {
         sids.insert(q->id);
+        /* If there is a break, recover 
+         * fetch active*/
+        if (id2ist[q->id]->isbreak()) {
+            active = 1;
+        }
     }
     
     rob.erase(p, rob.end());/*erase from rob*/
 
     for (auto c:sids) { /*erase from rs*/
         auto it = find(rs.begin(), rs.end(), c);
-        rs.erase(it); ++tinfo.cloak_rs_cnt;
+        if (it != rs.end()) {
+            rs.erase(it); ++tinfo.cloak_rs_cnt;
+        }
     }
 
     /*Erase from reg2id*/
@@ -645,6 +650,8 @@ void Simulator::flush_from(int id) {
 
     /*update pc*/
     pc() = tinfo.newpc; 
+
+    tinfo.just_flushed = 1;
 }
 
 /* In confirm_jump, btb will be updated, this
@@ -654,31 +661,33 @@ void Simulator::confirm_jump(int id, bool ok) {
     Inst& ist = *id2ist[id];
     int dst = ist.para_val[3];
 
-    BTB::STATUS pre_res = btb.raw_get(id);
-    /* If this is jump, the record was not in btb
-     * yet, thus pdst is always 0*/
-    if (ist.isjump()) { /*keep this*/ 
-        pre_res = BTB::STATUS::T;
-    }
-    if (pre_res == BTB::STATUS::NOTSET) {
-        pre_res = BTB::STATUS::NT;
-    }
-    bool pres = (pre_res == BTB::STATUS::T) ? true : false;
+    /* raw_get from btb, this must be the same as
+     * last query*/
+    BTB::STATUS pre_res = btb.raw_get(ist.textline()).second;
 
+    bool pres = (pre_res == BTB::STATUS::T) ? true : false;
+    //if (ist.isjump()) pres = true;
+    
     /*Correct prediction*/
     if (ok == pres) {
         /*update the rob*/
         for (RobCell& c: rob) {
             if (c.id == id) {
                 c.ok = true;
-                return;
+                break;
             }
         }
+        /* if previous not found, then add entry*/
+        if (pre_res == BTB::STATUS::NOTSET) {
+            if (!ist.isjump())
+                btb.set(ist.textline(), BTB::STATUS::NT, dst);
+        }
     } else if (pres && !ok) { /*a false taken*/
-        btb.set(ist.textline(), BTB::STATUS::NT); 
+        btb.set(ist.textline(), BTB::STATUS::NT, dst); 
         will_flush_from(ist.id(), ist.textline()+4); 
     } else if (!pres && ok) { /*a false not-taken*/
-        btb.set(ist.textline(), BTB::STATUS::T);
+        if (!ist.isjump())
+            btb.set(ist.textline(), BTB::STATUS::T, dst);
         will_flush_from(ist.id(), dst);
     }
 }
@@ -737,16 +746,13 @@ void Simulator::run() {
         buginfo("Running circle: %d, PC: %d...\n", clock(), pc());
         int res[5]; memset(res, 0, sizeof(res));
         tinfo.curpc = pc(); /*store current cycle pc*/
-        if (clock() == 38) {
-            printf("Hi");
-        }
-        if (clock() == 12) {
+        if (clock() == 9) {
             printf("Coming...\n");
         }
         res[0] = commit();
         res[2] = exec();
-        res[1] = wb();
         res[3] = issue();
+        res[1] = wb();
         res[4] = fetch();
 
         if (res[0] != -1) buginfo("commit non-empty\n");
