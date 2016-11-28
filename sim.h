@@ -76,6 +76,7 @@ private:
     void free_tag(int typ, int v);
     void flush_from(int id);
     void will_flush_from(int id, int newpc);
+    void write_res_back(WBCell w);
 public:
     Simulator();
     inline void setMM(MM* m) { mem = m;}
@@ -93,6 +94,8 @@ public:
     void exec_set(int id, int typ, int v, int exec_v);
     int exec_get(int typ, int v);
     void exec_break(int id);
+    bool check_pre_sw(int id);
+    bool check_pre_ac(int id);
     void linktag(int id);
     void linktag(Inst& ist);
     void might_jump(int id, int jtyp, int dst);

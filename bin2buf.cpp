@@ -112,29 +112,53 @@ bool Inst::isnop() {
     return d() == 0;
 }
 
+bool Inst::islw() {
+    return op() == 35;
+}
+
+bool Inst::issw() {
+    return op() == 43;
+}
+
 /* If this is a sw, dependance of two steps
  * are independent.
  * Otherwise, if any of the para is ROBTAG,
  * this is not ready*/
 bool Inst::isready() {
-    if (issw()) {
+    if (res_status == 0) 
+        return false;
+    if (islw()) {
         if (res_status == 2) {
-            return para_typ[2] != this->ROBTAG;
-        } else {
-            return para_typ[0] != this->ROBTAG;
+            if (hp->check_pre_ac(id()) && para_typ[2] \
+                    != ROBTAG) 
+                return true;
+        } else if (res_status == 1) {
+            assert(hp->check_pre_ac(id()));
+            assert(para_typ[0] == this->MEMORY);
+            if (hp->check_pre_sw(id()) )
+                    return true;
         }
+        return false;
     }
 
+    if (issw()) {
+        if (res_status == 2) {
+            if (hp->check_pre_ac(id()) && para_typ[2] \
+                != this->ROBTAG) 
+            return true;
+        } else if (res_status == 1) {
+            return para_typ[0] != this->ROBTAG;
+        }
+        return false;
+    }
+
+    /* Normal instructions*/
     for (int i=0; i<3; ++i) {
         if (para_typ[i] == this->ROBTAG)
             return false;
     }
 
     return true;
-}
-
-bool Inst::issw() {
-    return op() == 43;
 }
 
 /* Designed for simulator */

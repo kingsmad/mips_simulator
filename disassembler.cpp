@@ -160,6 +160,7 @@ int Disassembler::dis_sw(Inst& ist, char* s) {
         --ist.res_status;
         if (ist.res_status == 1) {
             int r = ist.hp->exec_get(ist.para_typ[2], ist.para_val[2]);
+            ist.para_typ[2] = ist.NONE;
             /*mem addr is resolved, we can re-link tags now*/
             ist.dst_typ = ist.MEMORY;
             ist.dst_val = r + ist.para_val[1];

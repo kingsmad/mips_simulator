@@ -1,8 +1,8 @@
-#ifndef BIN2BUF_H
-#define BIN2BUF_H
 /*************************************************************************
     > File Name: bin2buf.h
 ************************************************************************/
+#ifndef BIN2BUF_H
+#define BIN2BUF_H
 #include <iostream>
 #include <stdlib.h>
 #include <map>
@@ -16,6 +16,8 @@ public:
     virtual void linktag(int id) = 0;
     virtual void might_jump(int id, int jtyp, int dst) = 0;
     virtual void confirm_jump(int id, bool ok) = 0;
+    virtual bool check_pre_sw(int id) = 0;
+    virtual bool check_pre_ac(int id) = 0;
 };
 
 using namespace std;
@@ -73,6 +75,7 @@ public: /*Judgement functions*/
     bool isbreak(); 
     bool isnop();
     bool issw();
+    bool islw();
     bool isready(); /*Ready for exec*/
 public:
     function<void()> exec;

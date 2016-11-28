@@ -201,6 +201,26 @@ int Simulator::exec_get(int typ, int v) {
 
 void Simulator::exec_set(int id, int typ,\
         int v, int tv) {
+    Inst* ist = id2ist[id];
+    /* If this is sw, spent 0 cycle in wb*/
+    if (ist->issw()) {
+        for (RobCell& c: rob) { 
+            if (id != c.id) continue;
+            c.typ = ist->dst_typ;
+            c.v = ist->dst_val;
+            c.ans = tv;
+            c.ok = true;
+            break;
+        }
+        return;
+    } 
+
+    /*if (ist->islw()) {
+        WBCell w(id, typ, v, tv, clock());
+        write_res_back(w);
+        return;
+    }*/
+
     wbs.insert(WBCell(id, typ, v, tv, clock()+1));
 }
 
@@ -366,6 +386,42 @@ int Simulator::exec() {
     return 0;
 }
 
+/* Write back now for a single*/
+void Simulator::write_res_back(WBCell w) {
+    Inst& ist = *id2ist[w.id];
+
+    /*update rob*/
+    for (RobCell& c: rob) { /*change fake_dst to real dst*/
+        if (w.id != c.id) continue;
+        c.typ = ist.dst_typ;
+        c.v = ist.dst_val;
+        c.ans = w.tv;
+        c.ok = true;
+        break;
+    }
+
+    /*update reserve station*/
+    for (int x: rs) {
+        Inst& cst = *id2ist[x];
+        for (int i=0; i<3; ++i) {
+            if (cst.para_typ[i] != ist.IMMEDIATE && \
+                    cst.para_typ[i] == w.typ && \
+                cst.para_val[i] == w.v) {
+                cst.para_typ[i] = cst.IMMEDIATE;
+                cst.para_val[i] = w.tv;
+            }
+        }
+    }
+
+    /*Naive o(n), free registers*/
+    for (auto it=reg2id.begin(); it!=reg2id.end(); ++it) {
+        if (it->second == w.id) {
+            reg2id.erase(it);
+            break;
+        }
+    }
+}
+
 int Simulator::wb() {
     if (wbs.empty()) return -1;
     vector<WBCell> vw;
@@ -387,36 +443,7 @@ int Simulator::wb() {
         }
 
         /*Normal ist, doing write back*/
-        /*update rob*/
-        for (RobCell& c: rob) { /*change fake_dst to real dst*/
-            if (w.id != c.id) continue;
-            c.typ = ist.dst_typ;
-            c.v = ist.dst_val;
-            c.ans = w.tv;
-            c.ok = true;
-            break;
-        }
-
-        /*update reserve station*/
-        for (int x: rs) {
-            Inst& cst = *id2ist[x];
-            for (int i=0; i<3; ++i) {
-                if (cst.para_typ[i] != ist.IMMEDIATE && \
-                        cst.para_typ[i] == w.typ && \
-                    cst.para_val[i] == w.v) {
-                    cst.para_typ[i] = cst.IMMEDIATE;
-                    cst.para_val[i] = w.tv;
-                }
-            }
-        }
-    
-        /*Naive o(n), free registers*/
-        for (auto it=reg2id.begin(); it!=reg2id.end(); ++it) {
-            if (it->second == w.id) {
-                reg2id.erase(it);
-                break;
-            }
-        }
+        write_res_back(w);
     }
 
     for (WBCell w: vw) 
@@ -435,6 +462,54 @@ void Simulator::commit(int typ, int v, int tv) {
                 typ, v, tv);
         return;
     }
+}
+
+bool Simulator::check_pre_sw(int id) {
+    /* Get ist from this id*/
+    Inst* lw_ist = id2ist[id];
+    assert(lw_ist->islw());
+    assert(lw_ist != 0);
+    assert(lw_ist->para_typ[0] == lw_ist->MEMORY);
+    
+    /* Search in rob*/
+    auto p = rob.begin();
+    while(p!=rob.end() && p->id!=id) ++p;
+    assert(p!=rob.end());
+    
+    /* Find any sw before this lw that has the 
+     * same address*/
+    auto q = rob.begin();
+    while(q!=p) {
+        Inst* ist = id2ist[q->id];
+        if (ist->issw() && ist->dst_typ == ist->MEMORY && \
+                    ist->dst_val == lw_ist->para_val[0]) 
+            return false;
+        ++q;
+    }
+
+    return true;
+}
+
+bool Simulator::check_pre_ac(int id) {
+    /* Get ist from this id*/
+    /*Inst* mist = id2ist[id];*/
+    
+    /* Search in rob*/
+    auto p = rob.begin();
+    while(p!=rob.end() && p->id!=id) ++p;
+
+    /* Check if any ist befor id hasn't got
+     * its address yet*/
+    auto q = rob.begin();
+    while(q!=p) {
+        Inst* ist = id2ist[q->id];
+        if ((ist->issw() || ist->islw()) && ist->res_status\
+                == 2)
+            return false;
+        ++q;
+    }
+
+    return true;
 }
 
 void Simulator::free_tag(int typ, int v) {
@@ -665,9 +740,12 @@ void Simulator::run() {
         if (clock() == 38) {
             printf("Hi");
         }
+        if (clock() == 12) {
+            printf("Coming...\n");
+        }
         res[0] = commit();
-        res[1] = wb();
         res[2] = exec();
+        res[1] = wb();
         res[3] = issue();
         res[4] = fetch();
 
