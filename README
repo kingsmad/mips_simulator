@@ -23,4 +23,5 @@ Notes:
    line. In this case, I will be greatly appreciated if TA could use vimdiff to compare
    the traces.
 3: As mentioned in clarification, I omitted sim/dis option.
-
+4: I assume that all the memory addresses are in the range of input.
+5: I assume that the input file size is less than 10M
