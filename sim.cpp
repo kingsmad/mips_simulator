@@ -572,10 +572,14 @@ int Simulator::commit() {
     /* If we just committed a break, the whole system should
      * shut down now, so we return -1*/
     if (ist->isbreak()) {
+        id2ist.erase(ist->id());
+        free(ist);
         return -1;
     }
 
     buginfo("Time: %d, rob is non-empty\n", clock());
+    id2ist.erase(ist->id());
+    free(ist);
     return 0;
 }
 
@@ -660,6 +664,11 @@ void Simulator::flush_from(int id) {
     pc() = tinfo.newpc; 
 
     tinfo.just_flushed = 1;
+    
+    /* Free memory*/
+    for (int x: sids) {
+        id2ist.erase(x);
+    }
 }
 
 /* In confirm_jump, btb will be updated, this

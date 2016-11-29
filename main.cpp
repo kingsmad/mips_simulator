@@ -36,9 +36,11 @@ void buginfo(const char* f, ...) {if(!debug)return;va_list al; va_start(al, f);v
 
 #include "sim.h"
 
+Simulator sim;
+Bin2buf bin2buf;
+Disassembler disa;
+
 int main(int argc, char** argv) {
-    Bin2buf bin2buf;
-    Disassembler disa;
 
     bool kssim = true;
 
@@ -87,7 +89,6 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    Simulator sim;
     sim.set_trace_range(trace_st, trace_ed);
     sim.setMM(dynamic_cast<MM*>(&bin2buf));
     sim.setibuf(dynamic_cast<Ibuf*>(&bin2buf));
