@@ -1,10 +1,7 @@
 /*In god We Trust*/ 
 
-username: Juechen Liu
-UFID: 9089-8935
-E-mail: grinchjcl@ufl.edu
-
-On my honor, I have neither given nor received unauthorized aid on this assignment
+Description:
+In this project, I implemented an advanced pipelien using Tomasulo algorithm with out-of-order execution and in-order commit along with a Branch Predictor using the Brach Target Buffer for a processor which executes MIPS32 instructions as defined in the course CDA5155 Fall 2016.
 
 Current Usage:
 ./MIPSsim inputfilename outputfilename -Tn:m
