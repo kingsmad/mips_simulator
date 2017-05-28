@@ -1,7 +1,12 @@
 /*In god We Trust*/ 
 
 Description:
-In this project, I implemented an advanced pipelien using Tomasulo algorithm with out-of-order execution and in-order commit along with a Branch Predictor using the Brach Target Buffer for a processor which executes MIPS32 instructions as defined in the course CDA5155 Fall 2016.
+
+Course Project for CDA5155 Fall 2016.
+
+In this project, I implemented an advanced pipelien using Tomasulo algorithm with out-of-order execution 
+and in-order commit along with a Branch Predictor using the Brach Target Buffer for a processor which 
+executes MIPS32 instructions as defined in the class.
 
 Current Usage:
 ./MIPSsim inputfilename outputfilename -Tn:m
